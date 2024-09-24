@@ -1,0 +1,3 @@
+[submodule "min-api"]
+	path = min-api
+	url = git@github.com:jobor019/min-api.git
