@@ -99,6 +99,8 @@ int main() {
 
     std::cout << "PyTorch Tests\n";
 
+    auto device = torch::kMPS;
+
     juce::AudioBuffer<float> input_buffer;
     read_audio_file(in_file, input_buffer);
 
@@ -112,7 +114,7 @@ int main() {
     // Load model
     auto model = torch::jit::load(path);
     model.eval();
-    model.to(torch::kCPU);
+    model.to(device);
 
     auto methods = model.get_methods();
 
@@ -145,6 +147,7 @@ int main() {
 
 
         auto tensor_in = vector2tensor(v_batch);
+        tensor_in = tensor_in.to(device);
 
 //        std::cout << tensor_in  << "\n";
 
