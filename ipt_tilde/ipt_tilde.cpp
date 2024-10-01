@@ -235,7 +235,7 @@ public:
             MIN_FUNCTION {
                 if (args[0].type() == c74::min::message_type::int_argument) {
                     m_enabled = static_cast<bool>(args[0]);
-                    return enabled;
+                    return args;
                 }
 
                 cerr << "bad argument for message \"enabled\"" << endl;

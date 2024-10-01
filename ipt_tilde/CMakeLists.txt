@@ -3,12 +3,6 @@ include(${C74_MIN_API_DIR}/script/min-pretarget.cmake)
 
 include_directories("${C74_INCLUDES}")
 
-# TODO: Fix include hierarchy for libtorch
-set(CMAKE_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../libs/libtorch)
-FIND_PACKAGE(Torch REQUIRED)
-
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
-
 # SOURCE_FILES must be defined for min-object-unittest.cmake
 set(SOURCE_FILES ipt_tilde.cpp)
 
@@ -36,4 +30,10 @@ add_custom_command(
         TARGET ${PROJECT_NAME}
         POST_BUILD
         COMMAND cp "${TORCH_INSTALL_PREFIX}/lib/*.dylib" "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${${PROJECT_NAME}_EXTERN_OUTPUT_NAME}.mxo/Contents/MacOS/"
+)
+
+add_custom_command(
+        TARGET ${PROJECT_NAME}
+        POST_BUILD
+        COMMAND codesign -s - --deep --force "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${${PROJECT_NAME}_EXTERN_OUTPUT_NAME}.mxo"
 )

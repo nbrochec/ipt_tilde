@@ -1,10 +1,6 @@
 list(APPEND CMAKE_PREFIX_PATH "/Applications/JUCE/install")
 find_package(JUCE CONFIG REQUIRED)
 
-set(CMAKE_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../libs/libtorch)
-FIND_PACKAGE(Torch REQUIRED)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
-
 juce_add_console_app(torch_tests
         PRODUCT_NAME "Torch Tests")
 
