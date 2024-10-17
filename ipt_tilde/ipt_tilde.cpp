@@ -14,12 +14,12 @@ struct ClassificationResult {
 
 class IptClassifier {
 public:
-    explicit IptClassifier(const std::string& path) {
+    explicit IptClassifier(const std::string& path, torch::DeviceType device) {
         m_buffer = std::vector<float>(m_size, 0.0f);
         at::init_num_threads();
         m_model = torch::jit::load(path);
         m_model.eval();
-        m_model.to(torch::kCPU);
+        m_model.to(device);
     }
 
     std::optional<ClassificationResult> process(std::vector<double>&& input) {
@@ -150,7 +150,6 @@ private:
 
     std::atomic<bool> m_running = false;
     std::atomic<bool> m_enabled = true;
-    std::string m_path;
 
     LeakyIntegrator m_integrator;
 
@@ -167,30 +166,19 @@ public:
     outlet<> dumpout{this, "(any) dumpout"};
 
     explicit ipt_tilde(const atoms& args = {}) {
+        try {
+            auto model_path = parse_model_path(args);
+            auto device_type = parse_device_type(args);
 
-        if (!args.empty() && args[0].type() == c74::min::message_type::symbol_argument) {
-            auto path = std::string(args[0]);
-
-            if (path.size() >= 3 && path.substr(path.length() - 3) != ".ts") {
-                path = path + ".ts";
-            }
-
-            try {
-                m_path = static_cast<std::string>(c74::min::path(path));
-                m_running = true;
-                m_processing_thread = std::thread([&]() { this->process(); });
-            } catch (std::runtime_error& e) {
-                // failed to locate file
-                error(e.what());
-            }
-
-        } else {
-            error("Missing argument: filepath to model");
+            m_processing_thread = std::thread(&ipt_tilde::main_loop, this, std::move(model_path), device_type);
+        } catch (std::runtime_error& e) {
+            error(e.what());
         }
     }
 
+
     ~ipt_tilde() override {
-        if (m_running) {
+        if (m_processing_thread.joinable()) {
             m_running = false;
             m_processing_thread.join();
         }
@@ -205,7 +193,7 @@ public:
 
                     atoms distribution_atms;
 
-                    for (const auto& v : distribution) {
+                    for (const auto& v: distribution) {
                         distribution_atms.emplace_back(v);
                     }
 
@@ -248,7 +236,7 @@ public:
             MIN_FUNCTION {
                 if (args.size() == 1 && args[0].type() == c74::min::message_type::float_argument) {
                     auto tau = std::min(1.0, std::max(0.0, static_cast<double>(args[0])));
-                    m_integrator.set_tau((1.0-tau) * static_cast<double>(sensitivityrange.get()));
+                    m_integrator.set_tau((1.0 - tau) * static_cast<double>(sensitivityrange.get()));
                     return {tau};
                 }
 
@@ -274,29 +262,22 @@ public:
     };
 
 
-    // TODO: Dummy maxclass_setup. Remove or replace
-    message<> maxclass_setup{this, "maxclass_setup", MIN_FUNCTION {
-        cout << "PyTorch version: "
-             << TORCH_VERSION_MAJOR << "."
-             << TORCH_VERSION_MINOR << "."
-             << TORCH_VERSION_PATCH << endl;
-        return {};
-    }};
-
-
 private:
-    void process() {
+    void main_loop(std::string&& path, torch::DeviceType device) {
         std::unique_ptr<IptClassifier> classifier;
 
         try {
-            classifier = std::make_unique<IptClassifier>(m_path);
-        } catch (c10::Error& e) {
+            classifier = std::make_unique<IptClassifier>(path, device);
+            m_running = true;
+        } catch (const std::exception& e) {
             if (verbose.get()) {
                 cerr << e.what() << endl;
             } else {
                 cerr << "error during loading" << endl;
             }
             return;
+        } catch (...) {
+            cerr << "unknown error during loading" << endl;
         }
 
         try {
@@ -320,16 +301,75 @@ private:
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
 
-        } catch (c10::Error& e) {
+        } catch (const std::exception& e) {
             if (verbose.get()) {
                 cerr << e.what() << endl;
             } else {
                 cerr << "model architecture is not compatible" << endl;
             }
+        } catch (...) {
+            cerr << "unknown error" << endl;
         }
 
     }
 
+    static std::string parse_model_path(const atoms& args) {
+        if (args.empty()) {
+            throw std::runtime_error("Missing argument: filepath to model");
+        }
+
+        if (args[0].type() != c74::min::message_type::symbol_argument) {
+            throw std::runtime_error("first argument must be a filepath");
+        }
+
+        auto path = std::string(args[0]);
+
+        if (path.size() >= 3 && path.substr(path.length() - 3) != ".ts") {
+            path = path + ".ts";
+        }
+
+        // If relative path, look for file in max filepath and throws std::runtime_error if fails it to locate it
+        path = static_cast<std::string>(c74::min::path(path));
+
+        return path;
+    }
+
+
+    torch::DeviceType parse_device_type(const atoms& args) {
+        if (args.size() < 2) {
+            return torch::kCPU;
+        }
+
+        if (args[1].type() == c74::min::message_type::symbol_argument) {
+            auto device_str = std::string(args[1]);
+            std::transform(device_str.begin(), device_str.end(), device_str.begin(), [](unsigned char c){
+                return std::toupper(c);
+            });
+
+            if (device_str == "CPU") {
+                return torch::kCPU;
+            } else if (device_str == "CUDA") {
+                return torch::kCUDA;
+            } else if (device_str == "MPS") {
+                return torch::kMPS;
+            } else {
+                cwarn << "unknown device type \"" << device_str << "\", defaulting to CPU" << endl;
+                return torch::kCPU;
+            }
+        } else if (args[1].type() == c74::min::message_type::int_argument) {
+            auto device_idx = static_cast<int>(args[1]);
+
+            if (device_idx < 0 || device_idx >= static_cast<int>(torch::DeviceType::COMPILE_TIME_MAX_DEVICE_TYPES)) {
+                cwarn << "unknown device type \"" << device_idx << "\", defaulting to CPU" << endl;
+                return torch::kCPU;
+            }
+
+            return static_cast<torch::DeviceType>(device_idx);
+        }
+
+        cwarn << "bad argument for message \"model\", defaulting to CPU << endl";
+        return torch::kCPU;
+    }
 };
 
 
