@@ -90,12 +90,12 @@ int main() {
     std::string path{"/Users/joakimborg/Downloads/export_ts_with_attributes/test_20241011_095212.ts"};
     std::string method_name{"get_attributes"};
 
-    int duration_s = 10;
-    int sr = 44100;
-    int bit_rate = 16;
-    int num_channels = 1;
-
-    int hop_size = 2048;
+//    int duration_s = 10;
+//    int sr = 44100;
+//    int bit_rate = 16;
+//    int num_channels = 1;
+//
+//    int hop_size = 2048;
 
     std::cout << "PyTorch Tests\n";
 
@@ -146,7 +146,7 @@ int main() {
         v_batch.reserve(size);
 
         for (std::size_t i = 0; i < size; ++i) {
-            v_batch.push_back(input_buffer.getSample(0, j * size + i));
+            v_batch.push_back(input_buffer.getSample(0, static_cast<int>(j * size + i)));
         }
 
 
@@ -157,7 +157,7 @@ int main() {
         auto tensor_out = model.get_method("forward")(inputs).toTensor();
 
         std::vector<float> output_v;
-        output_v.reserve(tensor_out.numel());
+        output_v.reserve(static_cast<std::size_t>(tensor_out.numel()));
          auto out_ptr = tensor_out.contiguous().data_ptr<float>();
 
          std::copy(out_ptr, out_ptr + tensor_out.numel(), std::back_inserter(output_v));
