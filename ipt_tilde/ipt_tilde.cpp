@@ -8,6 +8,7 @@ using namespace c74::min;
 struct ClassificationResult {
     std::vector<float> distribution;
     std::size_t argmax;
+    double inference_latency_ms;
 };
 
 // ==============================================================================================
@@ -39,12 +40,15 @@ public:
     ClassificationResult analyze_buffer() {
         auto tensor_in = vector2tensor(m_buffer);
         std::vector<torch::jit::IValue> inputs = {tensor_in};
+        auto t1 = std::chrono::high_resolution_clock::now();
         auto tensor_out = m_model.get_method("forward")(inputs).toTensor();
+        auto t2 = std::chrono::high_resolution_clock::now();
 
         auto v = tensor2vector<float>(tensor_out);
         auto amax = argmax(v);
+        auto latency_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count();
 
-        return ClassificationResult{v, amax};
+        return ClassificationResult{v, amax, static_cast<double>(latency_ns) / 1e6};
     }
 
 
@@ -197,11 +201,12 @@ public:
                         distribution_atms.emplace_back(v);
                     }
 
-                    atoms argmax;
-                    argmax.emplace_back(IptClassifier::argmax(distribution));
-
-                    outlet_main.send(argmax);
+                    outlet_main.send(static_cast<long>(IptClassifier::argmax(distribution)));
                     outlet_distribution.send(distribution_atms);
+
+                    atoms latency{"latency"};
+                    latency.emplace_back(result.inference_latency_ms);
+                    dumpout.send(latency);
                 }
                 return {};
             }
@@ -290,9 +295,9 @@ private:
                     }
 
                     if (!buffered_audio.empty()) {
-                        auto label = classifier->process(std::move(buffered_audio));
-                        if (label) {
-                            m_event_fifo.try_enqueue(*label);
+                        auto result = classifier->process(std::move(buffered_audio));
+                        if (result) {
+                            m_event_fifo.try_enqueue(*result);
                             deliverer.delay(0.0);
                         }
                     }
@@ -342,7 +347,7 @@ private:
 
         if (args[1].type() == c74::min::message_type::symbol_argument) {
             auto device_str = std::string(args[1]);
-            std::transform(device_str.begin(), device_str.end(), device_str.begin(), [](unsigned char c){
+            std::transform(device_str.begin(), device_str.end(), device_str.begin(), [](unsigned char c) {
                 return std::toupper(c);
             });
 
