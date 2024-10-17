@@ -2,7 +2,8 @@ list(APPEND CMAKE_PREFIX_PATH "/Applications/JUCE/install")
 find_package(JUCE CONFIG REQUIRED)
 
 juce_add_console_app(torch_tests
-        PRODUCT_NAME "Torch Tests")
+        PRODUCT_NAME "Torch Tests"
+        VERSION "0.0.1")
 
 target_sources(torch_tests
         PRIVATE

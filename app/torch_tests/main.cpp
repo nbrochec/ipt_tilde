@@ -87,8 +87,8 @@ int main() {
     juce::File in_file("/Users/joakimborg/Music/Debug/trapezoid_C_maj_scale_A4_440_triang.aif");
     juce::File out_file("./test.wav");
 //    std::string path{"/Users/joakimborg/Downloads/percussion.ts"};
-    std::string path{"/Users/joakimborg/Downloads/test_20240924_103536.ts"};
-    std::string method_name{"forward"};
+    std::string path{"/Users/joakimborg/Downloads/export_ts_with_attributes/test_20241011_095212.ts"};
+    std::string method_name{"get_attributes"};
 
     int duration_s = 10;
     int sr = 44100;
@@ -99,7 +99,7 @@ int main() {
 
     std::cout << "PyTorch Tests\n";
 
-    auto device = torch::kMPS;
+    auto device = torch::kCPU;
 
     juce::AudioBuffer<float> input_buffer;
     read_audio_file(in_file, input_buffer);
@@ -131,6 +131,10 @@ int main() {
     std::cout << "method name: " << method->name() << "\n";
     std::cout << "method num inputs: " << method->num_inputs() << "\n";
 
+    auto args = std::vector<torch::jit::IValue>{};
+    auto v = method->operator()(args);
+    std::cout << "Sample rate: " << v.to<int>() << "\n";
+
     std::size_t size = 7168;
 
 //    auto params = ivalue2vector<int>(model.attr(method_name + "_params"));
@@ -149,9 +153,6 @@ int main() {
         auto tensor_in = vector2tensor(v_batch);
         tensor_in = tensor_in.to(device);
 
-//        std::cout << tensor_in  << "\n";
-
-
         std::vector<torch::jit::IValue> inputs = {tensor_in};
         auto tensor_out = model.get_method("forward")(inputs).toTensor();
 
@@ -162,75 +163,11 @@ int main() {
          std::copy(out_ptr, out_ptr + tensor_out.numel(), std::back_inserter(output_v));
 
 
-
-//        std::cout << tensor_out << "\n";
-
         for (auto& e : output_v) {
             std::cout << e << "\n";
         }
 
     }
-
-
-
-
-
-//    auto in_dim = params[0];
-//    auto in_ratio = params[1];
-//    auto out_dim = params[2];
-//    auto out_ratio = params[3];
-//
-//    int higher_ratio = 1;
-//    int max_ratio = std::max(params[1], params[3]);
-//    higher_ratio = std::max(higher_ratio, max_ratio);
-//
-//    std::cout << "Higher ratio: " << higher_ratio << "\n";
-//
-//
-//    // TODO: This looks extremely redundant, there has to be a better way to create a Tensor from a vector
-//
-//    int n_batches = 1;
-//    int n_vec = hop_size;
-////
-//    std::vector<float> batch;
-//    batch.reserve(static_cast<std::size_t>(hop_size));
-//
-//    for (int j = 0; j < hop_size; ++j) {
-//        batch.push_back(input_buffer.getSample(0, j));
-//    }
-//
-//    auto tensor_in = torch::from_blob(batch.data(), {1, 1, 2048}, torch::kFloat32);
-////    auto tensor_in = vector2tensor(batch);
-//
-//    std::cout << tensor_in << "\n";
-//
-//    auto cat_tensor_in = torch::cat(tensor_in, 1);
-//
-//    std::cout << cat_tensor_in << "\n";
-//
-//    cat_tensor_in = cat_tensor_in.reshape({in_dim, n_batches, -1, in_ratio});
-//    cat_tensor_in = cat_tensor_in.select(-1, -1);
-//    cat_tensor_in = cat_tensor_in.permute({1, 0, 2});
-//
-//    cat_tensor_in = cat_tensor_in.to(torch::kCPU);
-//    std::vector<torch::jit::IValue> inputs = {cat_tensor_in};
-//
-//    for (auto& v : inputs) {
-//        std::cout << v << "\n";
-//    }
-
-
-//
-//    at::Tensor tensor_out;
-//    try {
-//        tensor_out = (*method)(inputs).toTensor();
-//        tensor_out = tensor_out.repeat_interleave(out_ratio).reshape(
-//                {n_batches, out_dim, -1});
-//    } catch (const std::exception& e) {
-//        std::cerr << e.what() << '\n';
-//    }
-
-
 
     return 0;
 }

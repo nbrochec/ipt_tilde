@@ -25,7 +25,7 @@ find_package(Torch REQUIRED)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 
 add_subdirectory(shared_code)
-#add_subdirectory(app/torch_tests)
+add_subdirectory(app/torch_tests)
 
 # min-api config
 include(${CMAKE_SOURCE_DIR}/min-api/script/min-package.cmake)

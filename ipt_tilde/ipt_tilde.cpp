@@ -171,7 +171,7 @@ public:
         if (!args.empty() && args[0].type() == c74::min::message_type::symbol_argument) {
             auto path = std::string(args[0]);
 
-            if (path.substr(path.length() - 3) != ".ts") {
+            if (path.size() >= 3 && path.substr(path.length() - 3) != ".ts") {
                 path = path + ".ts";
             }
 
