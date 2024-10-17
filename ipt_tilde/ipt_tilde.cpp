@@ -15,12 +15,13 @@ struct ClassificationResult {
 
 class IptClassifier {
 public:
-    explicit IptClassifier(const std::string& path, torch::DeviceType device) {
+    explicit IptClassifier(const std::string& path, torch::DeviceType device)
+    : m_device(device) {
         m_buffer = std::vector<float>(m_size, 0.0f);
         at::init_num_threads();
         m_model = torch::jit::load(path);
         m_model.eval();
-        m_model.to(device);
+        m_model.to(m_device);
     }
 
     std::optional<ClassificationResult> process(std::vector<double>&& input) {
@@ -39,6 +40,7 @@ public:
 
     ClassificationResult analyze_buffer() {
         auto tensor_in = vector2tensor(m_buffer);
+        tensor_in  = tensor_in.to(m_device); // TODO: Might need a critical section here
         std::vector<torch::jit::IValue> inputs = {tensor_in};
         auto t1 = std::chrono::high_resolution_clock::now();
         auto tensor_out = m_model.get_method("forward")(inputs).toTensor();
@@ -80,6 +82,8 @@ private:
     static at::Tensor vector2tensor(std::vector<float>& v) {
         return torch::from_blob(v.data(), {1, 1, static_cast<long long>(v.size())}, torch::kFloat32);
     }
+
+    torch::DeviceType m_device;
 
     std::size_t m_size = 7168;
 
