@@ -44,7 +44,7 @@ public:
     }
 
 private:
-    const std::size_t m_segment_length = 7168*2; // TO DO: to be quired from the model
+    const std::size_t m_segment_length = 7168; // TO DO: to be quired from the model
     std::vector<float> m_large_buffer;
     std::size_t m_write_index = 0;
 };
@@ -162,7 +162,7 @@ private:
     torch::DeviceType m_device;
     torch::jit::Module m_model;
     CustomWindowedBuffer m_buffer;
-    std::size_t m_segment_length = 7168*2; // TO DO: to be quired from the model
+    std::size_t m_segment_length = 7168; // TO DO: to be quired from the model
 };
 
 // ==============================================================================================
