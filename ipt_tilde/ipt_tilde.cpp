@@ -12,18 +12,56 @@ struct ClassificationResult {
 };
 
 // ==============================================================================================
+/*
+Retrieve a window of the most recent samples.
+
+Not sure if this is CPU efficient... but you get the idea!
+*/
+class CustomWindowedBuffer : public object<CustomWindowedBuffer> {
+public:
+    CustomWindowedBuffer() : m_large_buffer(m_segment_length, 0.0f) {}
+
+    void add_samples(const std::vector<float>& new_samples) {
+        for (auto sample : new_samples) {
+            m_large_buffer[m_write_index] = sample;
+            m_write_index = (m_write_index + 1) % m_segment_length;
+        }
+    }
+
+    std::vector<float> get_windowed_buffer() { 
+        std::vector<float> windowed_buffer(m_segment_length);
+        size_t start_index = m_write_index;
+
+        for (size_t i = 0; i < m_segment_length; ++i) {
+            windowed_buffer[i] = m_large_buffer[(start_index + i) % m_segment_length];
+        }
+
+        return windowed_buffer;
+    }
+
+    std::size_t size() const {
+        return m_segment_length;
+    }
+
+private:
+    const std::size_t m_segment_length = 7168*2; // TO DO: to be quired from the model
+    std::vector<float> m_large_buffer;
+    std::size_t m_write_index = 0;
+};
+
+// ==============================================================================================
 
 class IptClassifier {
 public:
     explicit IptClassifier(const std::string& path, torch::DeviceType device)
-    : m_device(device) {
-        m_buffer = std::vector<float>(m_size, 0.0f);
+    : m_device(device), m_buffer() {
         at::init_num_threads();
         m_model = torch::jit::load(path);
         m_model.eval();
         m_model.to(m_device);
     }
 
+    /*
     std::optional<ClassificationResult> process(std::vector<double>&& input) {
         std::optional<ClassificationResult> result = std::nullopt;
         for (auto& sample: input) {
@@ -36,10 +74,23 @@ public:
         }
         return result;
     }
+    */
 
+    std::optional<ClassificationResult> process(std::vector<double>&& input) {
+        std::optional<ClassificationResult> result = std::nullopt;
+        
+        m_buffer.add_samples(std::vector<float>(input.begin(), input.end()));
 
-    ClassificationResult analyze_buffer() {
-        auto tensor_in = vector2tensor(m_buffer);
+        if (m_buffer.size() >= m_segment_length) {
+            auto windowed_buffer = m_buffer.get_windowed_buffer();
+            result = analyze_buffer(windowed_buffer);
+        }
+        
+        return result;
+    }
+
+    ClassificationResult analyze_buffer(const std::vector<float>& windowed_buffer) {
+        auto tensor_in = vector2tensor(windowed_buffer);
         tensor_in  = tensor_in.to(m_device); // TODO: Might need a critical section here
         std::vector<torch::jit::IValue> inputs = {tensor_in};
         auto t1 = std::chrono::high_resolution_clock::now();
@@ -54,7 +105,6 @@ public:
         return ClassificationResult{v, amax, static_cast<double>(latency_ns) / 1e6};
     }
 
-
     static std::size_t argmax(const std::vector<float>& v) {
         float max = v[0];
         std::size_t index = 0;
@@ -67,7 +117,7 @@ public:
         return index;
     }
 
-
+/*
 private:
     template<typename T>
     static std::vector<T> tensor2vector(const at::Tensor& tensor) {
@@ -94,7 +144,26 @@ private:
     torch::jit::Module m_model;
 
 };
+*/
 
+private:
+    template<typename T>
+    static std::vector<T> tensor2vector(const at::Tensor& tensor) {
+        std::vector<float> v(tensor.numel());
+        auto out_ptr = tensor.contiguous().data_ptr<float>();
+        std::copy(out_ptr, out_ptr + tensor.numel(), v.begin());
+        return v;
+    }
+
+    static at::Tensor vector2tensor(const std::vector<float>& v) {
+        return torch::from_blob(const_cast<float*>(v.data()), {1, 1, static_cast<long long>(v.size())}, torch::kFloat32);
+    }
+
+    torch::DeviceType m_device;
+    torch::jit::Module m_model;
+    CustomWindowedBuffer m_buffer;
+    std::size_t m_segment_length = 7168*2; // TO DO: to be quired from the model
+};
 
 // ==============================================================================================
 
