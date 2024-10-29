@@ -5,9 +5,16 @@
     - `get_sr`: get the sampling rate (Hz)
     - `get_classnames`: get the name of each class in alphabetic order
     - `get_seglen`: get the number of samples on to make the inference
+- [ ] Add outlet that returns the detected classname as a string/symbol. Outlets are then: classname, classindex, distribution, latency, dumpout?
 - [ ] Add condition to start inference, absolute sum of samples must be higher than 0
+- [ ] Add dB threshold to start inference? The user could specify it with a message/slider 
 - [ ] Perform resampling before stacking samples for inference (number of samples is unchanged)
 - [ ] Set the number of samples to 7168 by default, update with the value found with method `get_seglen`
+- [ ] Path for relative folder "models" or any folder in the Max preferences, to load model without absolute path
+- [ ] windows compilation
+- [ ] notarization
+- [ ] release
+- [ ] Maxhelp and maxref (Marco)
 - [ ] ~~Implement an onset detector (start inferring when the onset is detected, and stop when it is off).~~
 
 
