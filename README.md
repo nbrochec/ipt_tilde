@@ -1,7 +1,7 @@
 ## Roadmap
 
 - [x] Add GPU support (MPS)
-- [x] New methods from .ts file to be used :
+- [x] Implement getters in .ts model file:
     - `get_sr`: get the sampling rate (Hz)
     - `get_classnames`: get the name of each class in alphabetic order
     - `get_seglen`: get the number of samples on to make the inference
