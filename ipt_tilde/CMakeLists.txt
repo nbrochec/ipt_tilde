@@ -13,6 +13,7 @@ target_link_libraries(${PROJECT_NAME}
         PUBLIC
         shared_code
         PRIVATE
+        r8brain
         "${TORCH_LIBRARIES}")
 
 include(${C74_MIN_API_DIR}/script/min-posttarget.cmake)

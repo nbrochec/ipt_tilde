@@ -1,6 +1,7 @@
 #include "c74_min.h"
 #include <torch/script.h>
 #include <torch/torch.h>
+#include <CDSPResampler.h>
 #include <chrono>
 
 using namespace c74::min;
