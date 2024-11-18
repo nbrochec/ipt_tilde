@@ -4,7 +4,12 @@ include(${C74_MIN_API_DIR}/script/min-pretarget.cmake)
 include_directories("${C74_INCLUDES}")
 
 # SOURCE_FILES must be defined for min-object-unittest.cmake
-set(SOURCE_FILES ipt_tilde.cpp)
+set(SOURCE_FILES
+        ipt_tilde.cpp
+        circular_buffer.h
+        ipt_classifier.h
+        leaky_integrator.h
+)
 
 # ${PROJECT_NAME} will here be name of current directory (thanks to min-pretarget.cmake)
 add_library(${PROJECT_NAME} MODULE ${SOURCE_FILES})

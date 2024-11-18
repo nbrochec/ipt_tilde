@@ -4,225 +4,23 @@
 #include <CDSPResampler.h>
 #include <chrono>
 
+#include "ipt_classifier.h"
+#include "leaky_integrator.h"
+
 using namespace c74::min;
 
-struct ClassificationResult {
-    std::vector<float> distribution;
-    std::size_t argmax;
-    double inference_latency_ms;
-};
-
-// ==============================================================================================
-/*
-Retrieve a window of the most recent samples.
-
-Not sure if this is CPU efficient... but you get the idea!
-*/
-class CustomWindowedBuffer : public object<CustomWindowedBuffer> {
-public:
-    CustomWindowedBuffer() : m_large_buffer(m_segment_length, 0.0f) {}
-
-    void add_samples(const std::vector<float>& new_samples) {
-        for (auto sample : new_samples) {
-            m_large_buffer[m_write_index] = sample;
-            m_write_index = (m_write_index + 1) % m_segment_length;
-        }
-    }
-
-    std::vector<float> get_windowed_buffer() { 
-        std::vector<float> windowed_buffer(m_segment_length);
-        size_t start_index = m_write_index;
-
-        for (size_t i = 0; i < m_segment_length; ++i) {
-            windowed_buffer[i] = m_large_buffer[(start_index + i) % m_segment_length];
-        }
-
-        return windowed_buffer;
-    }
-
-    std::size_t size() const {
-        return m_segment_length;
-    }
-
-private:
-    const std::size_t m_segment_length = 7168; // TO DO: to be quired from the model
-    std::vector<float> m_large_buffer;
-    std::size_t m_write_index = 0;
-};
-
 // ==============================================================================================
 
-class IptClassifier {
-public:
-    explicit IptClassifier(const std::string& path, torch::DeviceType device)
-    : m_device(device), m_buffer() {
-        at::init_num_threads();
-        m_model = torch::jit::load(path);
-        m_model.eval();
-        m_model.to(m_device);
-    }
-
-    /*
-    std::optional<ClassificationResult> process(std::vector<double>&& input) {
-        std::optional<ClassificationResult> result = std::nullopt;
-        for (auto& sample: input) {
-            m_buffer[m_write_index] = static_cast<float>(sample);
-            m_write_index = (m_write_index + 1) % m_size;
-
-            if (m_write_index == 0) {
-                result = analyze_buffer();
-            }
-        }
-        return result;
-    }
-    */
-
-    std::optional<ClassificationResult> process(std::vector<double>&& input) {
-        std::optional<ClassificationResult> result = std::nullopt;
-        
-        m_buffer.add_samples(std::vector<float>(input.begin(), input.end()));
-
-        if (m_buffer.size() >= m_segment_length) {
-            auto windowed_buffer = m_buffer.get_windowed_buffer();
-            result = analyze_buffer(windowed_buffer);
-        }
-        
-        return result;
-    }
-
-    ClassificationResult analyze_buffer(const std::vector<float>& windowed_buffer) {
-        auto tensor_in = vector2tensor(windowed_buffer);
-        tensor_in  = tensor_in.to(m_device); // TODO: Might need a critical section here
-        std::vector<torch::jit::IValue> inputs = {tensor_in};
-        auto t1 = std::chrono::high_resolution_clock::now();
-        auto tensor_out = m_model.get_method("forward")(inputs).toTensor();
-        auto t2 = std::chrono::high_resolution_clock::now();
-        tensor_out = tensor_out.to(torch::kCPU);
-
-        auto v = tensor2vector<float>(tensor_out);
-        auto amax = argmax(v);
-        auto latency_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count();
-
-        return ClassificationResult{v, amax, static_cast<double>(latency_ns) / 1e6};
-    }
-
-    static std::size_t argmax(const std::vector<float>& v) {
-        float max = v[0];
-        std::size_t index = 0;
-        for (std::size_t i = 1; i < v.size(); i++) {
-            if (v[i] > max) {
-                max = v[i];
-                index = i;
-            }
-        }
-        return index;
-    }
-
-/*
-private:
-    template<typename T>
-    static std::vector<T> tensor2vector(const at::Tensor& tensor) {
-        std::vector<float> v;
-        v.reserve(tensor.numel());
-        auto out_ptr = tensor.contiguous().data_ptr<float>();
-
-        std::copy(out_ptr, out_ptr + tensor.numel(), std::back_inserter(v));
-
-        return v;
-    }
-
-    static at::Tensor vector2tensor(std::vector<float>& v) {
-        return torch::from_blob(v.data(), {1, 1, static_cast<long long>(v.size())}, torch::kFloat32);
-    }
-
-    torch::DeviceType m_device;
-
-    std::size_t m_size = 7168;
-
-    std::vector<float> m_buffer;
-    std::size_t m_write_index = 0;
-
-    torch::jit::Module m_model;
-
-};
-*/
-
-private:
-    template<typename T>
-    static std::vector<T> tensor2vector(const at::Tensor& tensor) {
-        std::vector<float> v(tensor.numel());
-        auto out_ptr = tensor.contiguous().data_ptr<float>();
-        std::copy(out_ptr, out_ptr + tensor.numel(), v.begin());
-        return v;
-    }
-
-    static at::Tensor vector2tensor(const std::vector<float>& v) {
-        return torch::from_blob(const_cast<float*>(v.data()), {1, 1, static_cast<long long>(v.size())}, torch::kFloat32);
-    }
-
-    torch::DeviceType m_device;
-    torch::jit::Module m_model;
-    CustomWindowedBuffer m_buffer;
-    std::size_t m_segment_length = 7168; // TO DO: to be quired from the model
-};
 
 // ==============================================================================================
-
-class LeakyIntegrator {
-public:
-    std::vector<float> process(const std::vector<float>& input) {
-        auto current_time = std::chrono::system_clock::now();
-
-        if (!m_last_callback || m_tau < 1e-6 || m_previous_value.size() != input.size()) {
-            m_last_callback = current_time;
-            m_previous_value = input;
-            return input;
-        }
-
-        auto elapsed_time = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                current_time - *m_last_callback).count());
-
-        elapsed_time = std::min(m_tau, std::max(0.0, elapsed_time));
-
-        auto output = integrate(input, elapsed_time);
-        m_previous_value = output;
-        m_last_callback = current_time;
-
-        return output;
-    }
-
-    void set_tau(double tau) {
-        m_tau = tau;
-    }
-
-
-private:
-    std::vector<float> integrate(const std::vector<float>& current_value, double elapsed_time) {
-        std::vector<float> result;
-        result.reserve(current_value.size());
-
-        auto dt = elapsed_time / m_tau;
-
-        for (std::size_t i = 0; i < current_value.size(); i++) {
-            result.emplace_back((1 - dt) * m_previous_value.at(i) + dt * current_value.at(i));
-        }
-        return result;
-    }
-
-
-    std::optional<std::chrono::time_point<std::chrono::system_clock>> m_last_callback;
-    std::vector<float> m_previous_value;
-
-    double m_tau = 0.0;
-
-
-};
 
 
 // ==============================================================================================
 
 class ipt_tilde : public object<ipt_tilde>, public vector_operator<> {
 private:
+    std::unique_ptr<IptClassifier> m_classifier;
+
     std::thread m_processing_thread;
     c74::min::fifo<double> m_audio_fifo{16384};
     c74::min::fifo<ClassificationResult> m_event_fifo{100};
@@ -299,6 +97,7 @@ public:
 
     attribute<bool> verbose{this, "verbose", false};
 
+    
     attribute<bool> enabled{this, "enabled", true, setter{
             MIN_FUNCTION {
                 if (args[0].type() == c74::min::message_type::int_argument) {
@@ -312,6 +111,7 @@ public:
     }
     };
 
+    
     attribute<double> sensitivity{this, "sensitivity", 1.0, setter{
             MIN_FUNCTION {
                 if (args.size() == 1 && args[0].type() == c74::min::message_type::float_argument) {
@@ -326,6 +126,7 @@ public:
     }
     };
 
+    
     attribute<int> sensitivityrange{this, "sensitivityrange", 2000, setter{
             MIN_FUNCTION {
                 if (args.size() == 1
@@ -340,14 +141,30 @@ public:
             }
     }
     };
+    
+    
+    attribute<double> threshold{ this, "threshold", -120.0, setter{
+            MIN_FUNCTION {
+                if (args.size() == 1 && args[0].type() == c74::min::message_type::float_argument) {
+                    // Note: ignored on first call, as m_classifier is not yet initialized
+                    if (m_classifier) {
+                        m_classifier->set_energy_threshold(static_cast<float>(args[0]));
+                    }
+
+					return args;
+				}
+                
+                cerr << "bad argument for message \"threshold\"" << endl;
+                return threshold;
+            }
+        }
+    };
 
 
 private:
     void main_loop(std::string&& path, torch::DeviceType device) {
-        std::unique_ptr<IptClassifier> classifier;
-
         try {
-            classifier = std::make_unique<IptClassifier>(path, device);
+            m_classifier = std::make_unique<IptClassifier>(path, device);
             m_running = true;
         } catch (const std::exception& e) {
             if (verbose.get()) {
@@ -370,7 +187,7 @@ private:
                     }
 
                     if (!buffered_audio.empty()) {
-                        auto result = classifier->process(std::move(buffered_audio));
+                        auto result = m_classifier->process(std::move(buffered_audio));
                         if (result) {
                             m_event_fifo.try_enqueue(*result);
                             deliverer.delay(0.0);
@@ -393,6 +210,7 @@ private:
 
     }
 
+    
     static std::string parse_model_path(const atoms& args) {
         if (args.empty()) {
             throw std::runtime_error("Missing argument: filepath to model");
