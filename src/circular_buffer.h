@@ -45,7 +45,7 @@ public:
         size_t start_index = m_write_index;
 
         for (size_t i = 0; i < num_samples; ++i) {
-            reordered_samples[i] = m_buffer[(start_index + i) % num_samples];
+            reordered_samples.push_back(m_buffer[(start_index + i) % num_samples]);
         }
 
         return reordered_samples;

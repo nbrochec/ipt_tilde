@@ -19,7 +19,7 @@ struct ClassificationResult {
 
 class IptModel {
 public:
-    static const inline std::string SAMPLE_RATE_METHOD = "get_sr";
+    static const inline std::string SAMPLE_RATE_METHOD = "get_attributes"; // TODO: RENAME ONCE MODEL HAS BEEN FIXED
     static const inline std::string SEGMENT_LENGTH_METHOD = "get_seglen";
     static const inline std::string CLASS_NAMES_METHOD = "get_classnames";
 
@@ -66,7 +66,15 @@ private:
 
     /** @throws c10::Error if model cannot parse segment length */
     static std::vector<std::string> parse_class_names(torch::jit::Module& model) {
-        throw c10::Error("Not implemented"); // TODO
+        auto classnames = model.get_method(IptModel::CLASS_NAMES_METHOD)(std::vector<c10::IValue>()).toList();
+
+        std::vector<std::string> v;
+
+        for (const auto& classname: classnames) {
+            v.emplace_back(classname.get().to<std::string>());
+        }
+
+        return v;
     }
 
 

@@ -114,6 +114,13 @@ public:
         }
     }
 
+    std::optional<std::vector<std::string>> get_class_names() const {
+        if (m_classifier) {
+            return m_classifier->get_model().get_class_names();
+        }
+        return std::nullopt;
+    }
+
 
 private:
 
