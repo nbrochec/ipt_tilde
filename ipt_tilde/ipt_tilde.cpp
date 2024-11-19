@@ -6,16 +6,10 @@
 
 #include "ipt_classifier.h"
 #include "leaky_integrator.h"
+#include "utility.h"
 
 using namespace c74::min;
 
-// ==============================================================================================
-
-
-// ==============================================================================================
-
-
-// ==============================================================================================
 
 class ipt_tilde : public object<ipt_tilde>, public vector_operator<> {
 private:
@@ -74,7 +68,7 @@ public:
                         distribution_atms.emplace_back(v);
                     }
 
-                    outlet_main.send(static_cast<long>(IptClassifier::argmax(distribution)));
+                    outlet_main.send(static_cast<long>(util::argmax(distribution)));
                     outlet_distribution.send(distribution_atms);
 
                     atoms latency{"latency"};

@@ -5,10 +5,13 @@ include_directories("${C74_INCLUDES}")
 
 # SOURCE_FILES must be defined for min-object-unittest.cmake
 set(SOURCE_FILES
-        ipt_tilde.cpp
-        circular_buffer.h
-        ipt_classifier.h
-        leaky_integrator.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/ipt_tilde.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/circular_buffer.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/ipt_classifier.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/leaky_integrator.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/energy_threshold.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/classifier.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/utility.h
 )
 
 # ${PROJECT_NAME} will here be name of current directory (thanks to min-pretarget.cmake)

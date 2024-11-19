@@ -4,162 +4,141 @@
 
 #include <torch/script.h>
 #include <torch/torch.h>
-#include <CDSPResampler.h>
 #include <chrono>
 #include "circular_buffer.h"
+#include "utility.h"
+#include "classifier.h"
+#include "energy_threshold.h"
 
-struct ClassificationResult {
-    std::vector<float> distribution;
-    std::size_t argmax;
-    double inference_latency_ms;
-};
 
 class IptClassifier {
 public:
-    explicit IptClassifier(const std::string& path, torch::DeviceType device)
-    : m_device(device), m_buffer() {
-        at::init_num_threads();
-    }
+    static const inline std::string CLASSIFY_METHOD = "forward";
 
-    void read_model(const std::string& path) {
+    explicit IptClassifier(std::string path
+                           , torch::DeviceType device
+                           , double energy_threshold_db
+                           , int threshold_window_ms)
+            : m_model_path(std::move(path))
+            , m_device(device)
+            , m_energy_threshold(energy_threshold_db)
+            , m_threshold_window_ms(threshold_window_ms) {}
+
+    /**
+     * @note Make sure to call this on the thread that will call `process()`
+     * @throws c10::Error if model cannot be loaded
+     * */
+    void initialize_model() {
         std::lock_guard lock{m_mutex};
-        m_model = torch::jit::load(path);
-        m_model.eval();
-        m_model.to(m_device);
+        m_classifier = std::make_unique<Classifier>(m_model_path, m_device);
+
+        m_initialized = is_initialized();
     }
 
 
+    /** @note: should typically be called when dsp is started / restarted */
+    void initialize_buffers(int sr, int input_vector_size) {
+        assert(m_classifier);
 
-    /*
-    std::optional<ClassificationResult> process(std::vector<double>&& input) {
-        std::optional<ClassificationResult> result = std::nullopt;
-        for (auto& sample: input) {
-            m_buffer[m_write_index] = static_cast<float>(sample);
-            m_write_index = (m_write_index + 1) % m_size;
+        std::lock_guard lock{m_mutex};
+        m_input_sr = sr;
+        m_threshold_buffer = std::make_unique<CircularBuffer<double>>(m_threshold_window_ms, sr);
 
-            if (m_write_index == 0) {
-                result = analyze_buffer();
-            }
-        }
-        return result;
+        auto& model = m_classifier->get_model();
+        m_classification_buffer = std::make_unique<ResamplingBuffer>(model.get_segment_length()
+                                                                     , input_vector_size
+                                                                     , sr
+                                                                     , model.get_sample_rate());
+
+        m_initialized = is_initialized();
     }
-    */
 
+
+    /** @throws c10::Error if classification fails */
     std::optional<ClassificationResult> process(std::vector<double>&& input) {
         // Note: using a mutex here is completely safe, as this is never called from the audio thread
         std::lock_guard lock{m_mutex};
 
-        std::optional<ClassificationResult> result = std::nullopt;
-
-        m_buffer.add_samples(std::vector<float>(input.begin(), input.end()));
-
-        if (m_buffer.size() >= m_segment_length) {
-            auto windowed_buffer = m_buffer.get_windowed_buffer();
-            result = analyze_buffer(windowed_buffer);
+        if (!m_initialized) {
+            return std::nullopt;
         }
 
-        return result;
-    }
+        m_threshold_buffer->add_samples(input);
+        m_classification_buffer->add_samples(std::move(input));
+
+        if (!m_classification_buffer->is_fully_allocated()) {
+            return std::nullopt;
+        }
 
 
-/*
-private:
-    template<typename T>
-    static std::vector<T> tensor2vector(const at::Tensor& tensor) {
-        std::vector<float> v;
-        v.reserve(tensor.numel());
-        auto out_ptr = tensor.contiguous().data_ptr<float>();
+        if (m_active) {
+            auto samples = m_classification_buffer->get_samples();
 
-        std::copy(out_ptr, out_ptr + tensor.numel(), std::back_inserter(v));
+            if (m_energy_threshold.is_above_threshold(samples)) {
+                return m_classifier->classify(util::to_floats(samples));
+            } else {
+                m_active = false;
+            }
+        } else {
+            if (m_energy_threshold.is_above_threshold(m_threshold_buffer->samples_unordered())) {
+                m_active = true;
 
-        return v;
-    }
-
-    static at::Tensor vector2tensor(std::vector<float>& v) {
-        return torch::from_blob(v.data(), {1, 1, static_cast<long long>(v.size())}, torch::kFloat32);
-    }
-
-    torch::DeviceType m_device;
-
-    std::size_t m_size = 7168;
-
-    std::vector<float> m_buffer;
-    std::size_t m_write_index = 0;
-
-    torch::jit::Module m_model;
-
-};
-*/
-
-    void set_energy_threshold(float threshold) { m_energy_threshold = threshold; }
-
-    void reinitialize(int sr) {
-        std::lock_guard lock{m_mutex};
-        m_input_sr = sr;
-        m_buffer.clear();
-    }
-
-
-private:
-    ClassificationResult analyze_buffer(const std::vector<float>& windowed_buffer) {
-        auto tensor_in = vector2tensor(windowed_buffer);
-        tensor_in  = tensor_in.to(m_device); // TODO: Might need a critical section here
-        std::vector<torch::jit::IValue> inputs = {tensor_in};
-        auto t1 = std::chrono::high_resolution_clock::now();
-        auto tensor_out = m_model.get_method("forward")(inputs).toTensor();
-        auto t2 = std::chrono::high_resolution_clock::now();
-        tensor_out = tensor_out.to(torch::kCPU);
-
-        auto v = tensor2vector<float>(tensor_out);
-        auto amax = argmax(v);
-        auto latency_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count();
-
-        return ClassificationResult{v, amax, static_cast<double>(latency_ns) / 1e6};
-    }
-
-    static std::size_t argmax(const std::vector<float>& v) {
-        float max = v[0];
-        std::size_t index = 0;
-        for (std::size_t i = 1; i < v.size(); i++) {
-            if (v[i] > max) {
-                max = v[i];
-                index = i;
+                auto samples = m_classification_buffer->get_samples();
+                return m_classifier->classify(util::to_floats(samples));
             }
         }
-        return index;
+
+        /* Note: The conditions for activation and deactivation are different:
+         *   - activation: one energy threshold window is above silence,
+         *   - deactivation: one entire inference window is below threshold
+         *   we might therefore have some edge cases where an entire window is below threshold but still classified.
+         *   This is for the moment intentional by design, but might after experimenting need a rework at a later stage
+         */
+
+        return std::nullopt;
     }
 
 
-    template<typename T>
-    static std::vector<T> tensor2vector(const at::Tensor& tensor) {
-        std::vector<float> v(tensor.numel());
-        auto out_ptr = tensor.contiguous().data_ptr<float>();
-        std::copy(out_ptr, out_ptr + tensor.numel(), v.begin());
-        return v;
+    void set_energy_threshold(float threshold_db) {
+        std::lock_guard lock{m_mutex};
+        m_energy_threshold.set_threshold_db(threshold_db);
     }
 
-    static at::Tensor vector2tensor(const std::vector<float>& v) {
-        return torch::from_blob(const_cast<float*>(v.data()), {1, 1, static_cast<long long>(v.size())}, torch::kFloat32);
+    void set_threshold_window(int duration_ms) {
+        std::lock_guard lock{m_mutex};
+
+        m_threshold_window_ms = duration_ms;
+
+        if (m_initialized) {
+            m_threshold_buffer->resize(duration_ms, *m_input_sr);
+        }
     }
 
 
-    static int parse_sample_rate(torch::jit::Module& model) {
-        throw std::runtime_error("Not implemented");  // TODO
+private:
+
+    /** @note: Defines invariant for class */
+    bool is_initialized() const {
+        return m_classifier && m_classification_buffer && m_threshold_buffer && m_input_sr;
     }
 
-    static int parse_segment_length(torch::jit::Module& model) {
-        throw std::runtime_error("Not implemented"); // TODO
-    }
-
+    // Initialization parameters
+    std::string m_model_path;
     torch::DeviceType m_device;
-    torch::jit::Module m_model;
-    CustomWindowedBuffer m_buffer;
-    std::size_t m_segment_length = 7168;
+    int m_threshold_window_ms;
+    std::optional<int> m_sr;
 
-    std::atomic<float> m_energy_threshold;
+    EnergyThreshold m_energy_threshold;
+
+    bool m_initialized = false;
+
+    std::unique_ptr<Classifier> m_classifier;
+    std::unique_ptr<ResamplingBuffer> m_classification_buffer;
+    std::unique_ptr<CircularBuffer<double>> m_threshold_buffer;
 
     std::optional<int> m_input_sr;
-    int m_model_sr;
+
+    bool m_active = false;
 
     std::mutex m_mutex;
 };
