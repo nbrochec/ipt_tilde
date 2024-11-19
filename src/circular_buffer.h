@@ -15,26 +15,37 @@ public:
     CircularBuffer(int ms, int sr) : CircularBuffer(util::mstosamples(ms, sr)) {}
 
 
-    void add_samples(std::vector<double>&& new_samples) {
-        add_samples(std::move(new_samples.data()), new_samples.size());
-    }
+//    void add_samples(std::vector<double>&& new_samples) {
+//        add_samples(std::move(new_samples.data()), new_samples.size());
+//    }
 
 
     void add_samples(const std::vector<T>& new_samples) {
-        add_samples(new_samples.data(), new_samples.size());
-    }
+//        add_samples(new_samples.data(), new_samples.size());
 
-
-    void add_samples(const T* samples, std::size_t num_samples) {
-        if (!m_fully_allocated && m_write_index + num_samples > m_buffer.size()) {
+        if (!m_fully_allocated && m_write_index + new_samples.size() >= m_buffer.size()) {
             m_fully_allocated = true;
         }
 
-        for (int i = 0; i < num_samples; ++i) {
-            m_buffer[m_write_index] = samples[i];
+        for (std::size_t i = 0; i < new_samples.size(); ++i) {
+            m_buffer[m_write_index] = new_samples[i];
             m_write_index = (m_write_index + 1) % m_buffer.size();
         }
     }
+
+
+
+
+//    void add_samples(const T* samples, std::size_t num_samples) {
+//        if (!m_fully_allocated && m_write_index + num_samples >= m_buffer.size()) {
+//            m_fully_allocated = true;
+//        }
+//
+//        for (std::size_t i = 0; i < num_samples; ++i) {
+//            m_buffer[m_write_index] = samples[i];
+//            m_write_index = (m_write_index + 1) % m_buffer.size();
+//        }
+//    }
 
 
     std::vector<T> get_samples() const {
@@ -104,10 +115,15 @@ public:
               , m_buffer(buffer_size) {}
 
 
-    void add_samples(std::vector<double>&& new_samples) {
-        double* output_pointer; // Allocated and freed by the resampler
-        int num_samples = m_resampler.process(new_samples.data(), static_cast<int>(new_samples.size()), output_pointer);
-        m_buffer.add_samples(output_pointer, static_cast<std::size_t>(num_samples));
+    void add_samples(std::vector<double> new_samples) {
+        double* output_ptr = nullptr;
+
+        int num_samples = m_resampler.process(new_samples.data(), static_cast<int>(new_samples.size()), output_ptr);
+
+        std::vector<double> resampled(static_cast<std::size_t>(num_samples));
+        std::copy(output_ptr, output_ptr + num_samples, resampled.begin());
+
+        m_buffer.add_samples(resampled);
     }
 
 

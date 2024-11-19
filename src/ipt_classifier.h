@@ -45,17 +45,19 @@ public:
         m_input_sr = sr;
         m_threshold_buffer = std::make_unique<CircularBuffer<double>>(m_threshold_window_ms, sr);
 
-        m_classification_buffer = std::make_unique<ResamplingBuffer>(m_model->get_segment_length()
-                                                                     , input_vector_length
-                                                                     , sr
-                                                                     , m_model->get_sample_rate());
+//        m_classification_buffer = std::make_unique<ResamplingBuffer>(m_model->get_segment_length()
+//                                                                     , input_vector_length
+//                                                                     , sr
+//                                                                     , m_model->get_sample_rate());
+
+        m_classification_buffer = std::make_unique<CircularBuffer<double>>(m_model->get_segment_length());
 
         m_initialized = is_initialized();
     }
 
 
     /** @throws c10::Error if classification fails */
-    std::optional<ClassificationResult> process(std::vector<double>&& input) {
+    std::optional<ClassificationResult> process(const std::vector<double>& input) {
         // Note: using a mutex here is completely safe, as this is never called from the audio thread
         std::lock_guard lock{m_mutex};
 
@@ -64,7 +66,7 @@ public:
         }
 
         m_threshold_buffer->add_samples(input);
-        m_classification_buffer->add_samples(std::move(input));
+        m_classification_buffer->add_samples(input);
 
         if (!m_classification_buffer->is_fully_allocated()) {
             return std::nullopt;
@@ -75,7 +77,6 @@ public:
             auto samples = m_classification_buffer->get_samples();
 
             if (m_energy_threshold.is_above_threshold(samples)) {
-                std::cout << "active classification\n";
                 return m_model->classify(util::to_floats(samples));
             } else {
                 m_active = false;
@@ -84,7 +85,6 @@ public:
             if (m_energy_threshold.is_above_threshold(m_threshold_buffer->samples_unordered())) {
                 m_active = true;
 
-                std::cout << "first classification\n";
                 auto samples = m_classification_buffer->get_samples();
                 return m_model->classify(util::to_floats(samples));
             }
@@ -143,7 +143,10 @@ private:
     bool m_initialized = false;
 
     std::unique_ptr<Model> m_model;
-    std::unique_ptr<ResamplingBuffer> m_classification_buffer;
+
+    // TODO: Use ResamplingBuffer
+//    std::unique_ptr<ResamplingBuffer> m_classification_buffer;
+    std::unique_ptr<CircularBuffer<double>> m_classification_buffer;
     std::unique_ptr<CircularBuffer<double>> m_threshold_buffer;
 
     std::optional<int> m_input_sr;

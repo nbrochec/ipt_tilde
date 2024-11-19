@@ -13,6 +13,8 @@ static inline std::vector<double> random_vector(std::size_t n
     return vs;
 }
 
+
+
 int main() {
     std::string model_path = "/Users/joakimborg/Downloads/test_20241104_222325.ts";
     auto device = torch::kCPU;
@@ -24,7 +26,7 @@ int main() {
 
     std::size_t num_inferences = 10;
 
-    IptClassifier classifier{model_path, device, energy_threshold_db, energy_threshold_ms};
+    auto classifier = IptClassifier{model_path, device, energy_threshold_db, energy_threshold_ms};
 
     classifier.initialize_model();
     classifier.initialize_buffers(sr, input_vector_length);
@@ -39,7 +41,7 @@ int main() {
     while (num_inferences > 0) {
         auto audio_input_vector = random_vector(input_vector_length, rng, dist);
 
-        auto result = classifier.process(std::move(audio_input_vector));
+        auto result = classifier.process(audio_input_vector);
 
         if (result) {
             output_classes.push_back(*result);

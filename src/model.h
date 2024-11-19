@@ -44,6 +44,7 @@ public:
     /** @throws c10::Error if classification fails */
     ClassificationResult classify(std::vector<float> windowed_buffer) {
         auto tensor_in = vector2tensor(windowed_buffer);
+
         tensor_in = tensor_in.to(m_device);
         std::vector<torch::jit::IValue> inputs = {tensor_in};
         auto t1 = std::chrono::high_resolution_clock::now();

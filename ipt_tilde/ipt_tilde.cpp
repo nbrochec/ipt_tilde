@@ -197,18 +197,13 @@ public:
         int sample_rate = args[0];
         int vector_length = args[1];
 
-        std::cout << "dspsetup\n";
-
         // In the rare case of thread initialization not being done by the time dsp is enabled, wait until init finishes
         while (!m_model_initialized) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
 
-
-
         // If model initialization was successful: initialize buffers
         if (m_running) {
-            std::cout << "initializing buffers\n";
             m_classifier->initialize_buffers(sample_rate, vector_length);
         }
 
@@ -221,7 +216,6 @@ private:
         try {
             m_classifier->initialize_model();
             m_running = true;
-            std::cout << "Successful initialization\n";
         } catch (const std::exception& e) {
             if (verbose.get()) {
                 cerr << e.what() << endl;
@@ -244,7 +238,7 @@ private:
                     }
 
                     if (!buffered_audio.empty()) {
-                        auto result = m_classifier->process(std::move(buffered_audio));
+                        auto result = m_classifier->process(buffered_audio);
                         if (result) {
                             m_event_fifo.try_enqueue(*result);
                             deliverer.delay(0.0);
