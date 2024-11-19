@@ -33,6 +33,14 @@ static inline std::size_t mstosamples(int ms, int sr) {
 
 // ==============================================================================================
 
+template<typename T, typename = std::enable_if_t<std::is_arithmetic_v<T>>>
+static inline T clamp(T x, T low, T high) {
+    return std::max(low, std::min(x, high));
+}
+
+
+// ==============================================================================================
+
 static inline std::vector<float> to_floats(const std::vector<double>& v) {
     std::vector<float> f;
     f.reserve(v.size());

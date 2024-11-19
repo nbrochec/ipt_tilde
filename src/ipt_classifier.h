@@ -37,7 +37,7 @@ public:
 
 
     /** @note: should typically be called when dsp is started / restarted */
-    void initialize_buffers(int sr, int input_vector_size) {
+    void initialize_buffers(int sr, int input_vector_length) {
         assert(m_classifier);
 
         std::lock_guard lock{m_mutex};
@@ -46,7 +46,7 @@ public:
 
         auto& model = m_classifier->get_model();
         m_classification_buffer = std::make_unique<ResamplingBuffer>(model.get_segment_length()
-                                                                     , input_vector_size
+                                                                     , input_vector_length
                                                                      , sr
                                                                      , model.get_sample_rate());
 

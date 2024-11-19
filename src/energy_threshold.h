@@ -6,11 +6,18 @@
 
 class EnergyThreshold {
 public:
+    static constexpr double MINIMUM_THRESHOLD = -80.0;
+
+
     explicit EnergyThreshold(double threshold_db) : m_threshold_db(threshold_db) {}
 
 
     /** Compute the energy over a single vector, without modifying the internal buffer */
     bool is_above_threshold(const std::vector<double>& v) const {
+        if (m_threshold_db <= MINIMUM_THRESHOLD) {
+            return true;
+        }
+
         return atodb(rms(v)) >= m_threshold_db;
     }
 
