@@ -7,18 +7,19 @@
 #include <chrono>
 #include "circular_buffer.h"
 #include "utility.h"
-#include "classifier.h"
+#include "model.h"
 #include "energy_threshold.h"
 
 
 class IptClassifier {
 public:
     static const inline std::string CLASSIFY_METHOD = "forward";
+    static const int DEFAULT_THRESHOLD_WINDOW_MS = 20;
 
     explicit IptClassifier(std::string path
                            , torch::DeviceType device
-                           , double energy_threshold_db
-                           , int threshold_window_ms)
+                           , double energy_threshold_db = EnergyThreshold::MINIMUM_THRESHOLD
+                           , int threshold_window_ms = DEFAULT_THRESHOLD_WINDOW_MS)
             : m_model_path(std::move(path))
             , m_device(device)
             , m_energy_threshold(energy_threshold_db)
@@ -30,7 +31,7 @@ public:
      * */
     void initialize_model() {
         std::lock_guard lock{m_mutex};
-        m_classifier = std::make_unique<Classifier>(m_model_path, m_device);
+        m_model = std::make_unique<Model>(m_model_path, m_device);
 
         m_initialized = is_initialized();
     }
@@ -38,17 +39,16 @@ public:
 
     /** @note: should typically be called when dsp is started / restarted */
     void initialize_buffers(int sr, int input_vector_length) {
-        assert(m_classifier);
+        assert(m_model);
 
         std::lock_guard lock{m_mutex};
         m_input_sr = sr;
         m_threshold_buffer = std::make_unique<CircularBuffer<double>>(m_threshold_window_ms, sr);
 
-        auto& model = m_classifier->get_model();
-        m_classification_buffer = std::make_unique<ResamplingBuffer>(model.get_segment_length()
+        m_classification_buffer = std::make_unique<ResamplingBuffer>(m_model->get_segment_length()
                                                                      , input_vector_length
                                                                      , sr
-                                                                     , model.get_sample_rate());
+                                                                     , m_model->get_sample_rate());
 
         m_initialized = is_initialized();
     }
@@ -75,7 +75,8 @@ public:
             auto samples = m_classification_buffer->get_samples();
 
             if (m_energy_threshold.is_above_threshold(samples)) {
-                return m_classifier->classify(util::to_floats(samples));
+                std::cout << "active classification\n";
+                return m_model->classify(util::to_floats(samples));
             } else {
                 m_active = false;
             }
@@ -83,8 +84,9 @@ public:
             if (m_energy_threshold.is_above_threshold(m_threshold_buffer->samples_unordered())) {
                 m_active = true;
 
+                std::cout << "first classification\n";
                 auto samples = m_classification_buffer->get_samples();
-                return m_classifier->classify(util::to_floats(samples));
+                return m_model->classify(util::to_floats(samples));
             }
         }
 
@@ -99,7 +101,7 @@ public:
     }
 
 
-    void set_energy_threshold(float threshold_db) {
+    void set_energy_threshold(double threshold_db) {
         std::lock_guard lock{m_mutex};
         m_energy_threshold.set_threshold_db(threshold_db);
     }
@@ -107,6 +109,7 @@ public:
     void set_threshold_window(int duration_ms) {
         std::lock_guard lock{m_mutex};
 
+        duration_ms = std::max(0, duration_ms);
         m_threshold_window_ms = duration_ms;
 
         if (m_initialized) {
@@ -115,8 +118,8 @@ public:
     }
 
     std::optional<std::vector<std::string>> get_class_names() const {
-        if (m_classifier) {
-            return m_classifier->get_model().get_class_names();
+        if (m_model) {
+            return m_model->get_class_names();
         }
         return std::nullopt;
     }
@@ -126,7 +129,7 @@ private:
 
     /** @note: Defines invariant for class */
     bool is_initialized() const {
-        return m_classifier && m_classification_buffer && m_threshold_buffer && m_input_sr;
+        return m_model && m_classification_buffer && m_threshold_buffer && m_input_sr;
     }
 
     // Initialization parameters
@@ -139,7 +142,7 @@ private:
 
     bool m_initialized = false;
 
-    std::unique_ptr<Classifier> m_classifier;
+    std::unique_ptr<Model> m_model;
     std::unique_ptr<ResamplingBuffer> m_classification_buffer;
     std::unique_ptr<CircularBuffer<double>> m_threshold_buffer;
 

@@ -116,18 +116,6 @@ public:
     }
 
 
-    std::vector<float> get_samples_float() const {
-        auto samples_d = m_buffer.get_samples();
-        std::vector<float> samples_f;
-        samples_f.reserve(samples_d.size());
-        for (auto& s: samples_d) {
-            samples_f.push_back(static_cast<float>(s));
-        }
-
-        return samples_f;
-    }
-
-
     bool is_fully_allocated() const {
         return m_buffer.is_fully_allocated();
     }

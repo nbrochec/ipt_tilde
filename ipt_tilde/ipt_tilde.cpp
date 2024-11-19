@@ -1,7 +1,5 @@
 #include "c74_min.h"
 #include <torch/script.h>
-#include <torch/torch.h>
-#include <CDSPResampler.h>
 #include <chrono>
 
 #include "ipt_classifier.h"
@@ -19,10 +17,15 @@ private:
     c74::min::fifo<double> m_audio_fifo{16384};
     c74::min::fifo<ClassificationResult> m_event_fifo{100};
 
-    std::atomic<bool> m_running = false;
-    std::atomic<bool> m_enabled = true;
+
+    std::atomic<bool> m_running = false; // lifetime control of internal classification thread
+    std::atomic<bool> m_enabled = true;  // user-controlled flag to manually disable output
+
+    // flag indicating whether m_classifier's `initialize_model()` has been called (independently of success)
+    std::atomic<bool> m_model_initialized = false;
 
     LeakyIntegrator m_integrator;
+
 
 public:
     MIN_DESCRIPTION{""};                   // TODO
@@ -40,11 +43,12 @@ public:
         try {
             auto model_path = parse_model_path(args);
             auto device_type = parse_device_type(args);
-
-            m_processing_thread = std::thread(&ipt_tilde::main_loop, this, std::move(model_path), device_type);
+            m_classifier = std::make_unique<IptClassifier>(model_path, device_type);
         } catch (std::runtime_error& e) {
             error(e.what());
         }
+
+        // Note: Object construction is finalized in `setup` message
     }
 
 
@@ -91,7 +95,7 @@ public:
 
     attribute<bool> verbose{this, "verbose", false};
 
-    
+
     attribute<bool> enabled{this, "enabled", true, setter{
             MIN_FUNCTION {
                 if (args[0].type() == c74::min::message_type::int_argument) {
@@ -105,7 +109,7 @@ public:
     }
     };
 
-    
+
     attribute<double> sensitivity{this, "sensitivity", 1.0, setter{
             MIN_FUNCTION {
                 if (args.size() == 1 && args[0].type() == c74::min::message_type::float_argument) {
@@ -120,7 +124,7 @@ public:
     }
     };
 
-    
+
     attribute<int> sensitivityrange{this, "sensitivityrange", 2000, setter{
             MIN_FUNCTION {
                 if (args.size() == 1
@@ -135,41 +139,100 @@ public:
             }
     }
     };
-    
-    
-    attribute<double> threshold{ this, "threshold", -120.0, setter{
+
+
+    attribute<double> threshold{this, "threshold", EnergyThreshold::MINIMUM_THRESHOLD, setter{
             MIN_FUNCTION {
                 if (args.size() == 1 && args[0].type() == c74::min::message_type::float_argument) {
-                    // Note: ignored on first call, as m_classifier is not yet initialized
+                    // Note: ignored on first call, as m_classifier is not yet initialized.
+                    //       In this case, it will be passed through the `setup` message instead
                     if (m_classifier) {
                         m_classifier->set_energy_threshold(static_cast<float>(args[0]));
                     }
 
-					return args;
-				}
-                
+                    return args;
+                }
+
                 cerr << "bad argument for message \"threshold\"" << endl;
                 return threshold;
             }
-        }
+    }
     };
 
 
+    attribute<int> window{this, "window", IptClassifier::DEFAULT_THRESHOLD_WINDOW_MS, setter{
+            MIN_FUNCTION {
+                if (args.size() == 1 && args[0].type() == c74::min::message_type::int_argument) {
+                    // Note: ignored on first call, as m_classifier is not yet initialized.
+                    //       In this case, it will be passed through the `setup` message instead
+                    if (m_classifier) {
+                        m_classifier->set_threshold_window(static_cast<int>(args[0]));
+                    }
+
+                    return args;
+                }
+
+                cerr << "bad argument for message \"threshold\"" << endl;
+                return threshold;
+            }
+    }
+    };
+
+
+    // Note: Special function called internally by the min-api after the constructor and all attributes
+    // have been initialized. This function cannot be called directly by a user
+    message<> setup{this, "setup", MIN_FUNCTION {
+        m_classifier->set_energy_threshold(threshold.get());
+        m_classifier->set_threshold_window(window.get());
+
+        // since m_classifier is initialized in ctor, we can be sure that it's fully initialized when thread is launched
+        m_processing_thread = std::thread(&ipt_tilde::main_loop, this);
+        return {};
+    }};
+    
+
+    // Note: Special function called internally when audio is enabled. This function cannot be called directly by user.
+    //       Also note that this function is called on the main thread, not the audio thread.
+    message<> dspsetup{this, "dspsetup", MIN_FUNCTION {
+        int sample_rate = args[0];
+        int vector_length = args[1];
+
+        std::cout << "dspsetup\n";
+
+        // In the rare case of thread initialization not being done by the time dsp is enabled, wait until init finishes
+        while (!m_model_initialized) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+
+
+        // If model initialization was successful: initialize buffers
+        if (m_running) {
+            std::cout << "initializing buffers\n";
+            m_classifier->initialize_buffers(sample_rate, vector_length);
+        }
+
+        return {};
+    }};
+
+
 private:
-    void main_loop(std::string&& path, torch::DeviceType device) {
+    void main_loop() {
         try {
-            m_classifier = std::make_unique<IptClassifier>(path, device);
+            m_classifier->initialize_model();
             m_running = true;
+            std::cout << "Successful initialization\n";
         } catch (const std::exception& e) {
             if (verbose.get()) {
                 cerr << e.what() << endl;
             } else {
                 cerr << "error during loading" << endl;
             }
-            return;
         } catch (...) {
             cerr << "unknown error during loading" << endl;
         }
+
+        m_model_initialized = true; // true independently of success
 
         try {
             while (m_running) {
@@ -204,7 +267,7 @@ private:
 
     }
 
-    
+
     static std::string parse_model_path(const atoms& args) {
         if (args.empty()) {
             throw std::runtime_error("Missing argument: filepath to model");

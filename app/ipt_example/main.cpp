@@ -20,7 +20,7 @@ int main() {
     int energy_threshold_ms = 20;
 
     int sr = 44100;
-    int input_vector_length = 512;
+    int input_vector_length = 64;
 
     std::size_t num_inferences = 10;
 
