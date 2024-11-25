@@ -143,7 +143,8 @@ public:
 
     attribute<double> threshold{this, "threshold", EnergyThreshold::MINIMUM_THRESHOLD, setter{
             MIN_FUNCTION {
-                if (args.size() == 1 && args[0].type() == c74::min::message_type::float_argument) {
+                if (args.size() == 1 && (args[0].type() == c74::min::message_type::float_argument
+                                         || args[0].type() == c74::min::message_type::int_argument)) {
                     // Note: ignored on first call, as m_classifier is not yet initialized.
                     //       In this case, it will be passed through the `setup` message instead
                     if (m_classifier) {
@@ -189,7 +190,7 @@ public:
         m_processing_thread = std::thread(&ipt_tilde::main_loop, this);
         return {};
     }};
-    
+
 
     // Note: Special function called internally when audio is enabled. This function cannot be called directly by user.
     //       Also note that this function is called on the main thread, not the audio thread.
@@ -238,7 +239,7 @@ private:
                     }
 
                     if (!buffered_audio.empty()) {
-                        auto result = m_classifier->process(buffered_audio);
+                        auto result = m_classifier->process(std::move(buffered_audio));
                         if (result) {
                             m_event_fifo.try_enqueue(*result);
                             deliverer.delay(0.0);

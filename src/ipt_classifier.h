@@ -45,19 +45,20 @@ public:
         m_input_sr = sr;
         m_threshold_buffer = std::make_unique<CircularBuffer<double>>(m_threshold_window_ms, sr);
 
-//        m_classification_buffer = std::make_unique<ResamplingBuffer>(m_model->get_segment_length()
-//                                                                     , input_vector_length
-//                                                                     , sr
-//                                                                     , m_model->get_sample_rate());
+        m_classification_buffer = std::make_unique<ResamplingBuffer>(m_model->get_segment_length()
+                                                                     , input_vector_length
+                                                                     , sr
+                                                                     , m_model->get_sample_rate());
 
-        m_classification_buffer = std::make_unique<CircularBuffer<double>>(m_model->get_segment_length());
+        // TODO: Remove
+//        m_classification_buffer = std::make_unique<CircularBuffer<double>>(m_model->get_segment_length());
 
         m_initialized = is_initialized();
     }
 
 
     /** @throws c10::Error if classification fails */
-    std::optional<ClassificationResult> process(const std::vector<double>& input) {
+    std::optional<ClassificationResult> process(std::vector<double>&& input) {
         // Note: using a mutex here is completely safe, as this is never called from the audio thread
         std::lock_guard lock{m_mutex};
 
@@ -144,9 +145,7 @@ private:
 
     std::unique_ptr<Model> m_model;
 
-    // TODO: Use ResamplingBuffer
-//    std::unique_ptr<ResamplingBuffer> m_classification_buffer;
-    std::unique_ptr<CircularBuffer<double>> m_classification_buffer;
+    std::unique_ptr<ResamplingBuffer> m_classification_buffer;
     std::unique_ptr<CircularBuffer<double>> m_threshold_buffer;
 
     std::optional<int> m_input_sr;

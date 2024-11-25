@@ -41,7 +41,7 @@ int main() {
     while (num_inferences > 0) {
         auto audio_input_vector = random_vector(input_vector_length, rng, dist);
 
-        auto result = classifier.process(audio_input_vector);
+        auto result = classifier.process(std::move(audio_input_vector));
 
         if (result) {
             output_classes.push_back(*result);
