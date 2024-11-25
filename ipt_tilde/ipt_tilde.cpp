@@ -29,8 +29,6 @@ private:
     std::optional<std::vector<std::string>> m_class_names;
 
 
-
-
 public:
     MIN_DESCRIPTION{""};                   // TODO
     MIN_TAGS{""};                          // TODO
@@ -181,7 +179,8 @@ public:
 
     attribute<int> window{this, "window", IptClassifier::DEFAULT_THRESHOLD_WINDOW_MS, setter{
             MIN_FUNCTION {
-                if (args.size() == 1 && args[0].type() == c74::min::message_type::int_argument) {
+                if (args.size() == 1 && (args[0].type() == c74::min::message_type::int_argument
+                                         || args[0].type() == c74::min::message_type::float_argument)) {
                     // Note: ignored on first call, as m_classifier is not yet initialized.
                     //       In this case, it will be passed through the `setup` message instead
                     if (m_classifier) {
@@ -218,7 +217,7 @@ public:
         }
 
         atoms names{"classnames"};
-        for (const auto& n : *m_class_names)  {
+        for (const auto& n: *m_class_names) {
             names.emplace_back(n);
         }
 
