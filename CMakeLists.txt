@@ -24,9 +24,13 @@ list(APPEND CMAKE_PREFIX_PATH "${LIBTORCH_DIR}/lib/python${LIBTORCH_PYTHON_VERSI
 find_package(Torch REQUIRED)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 
-add_subdirectory(shared_code)
+message(NOTICE "Note: a 'static library kineto_LIBRARY-NOTFOUND' warning is expected here.
+This package is built with pre-compiled binaries from conda-forge which do not include said library,
+but it's not needed for this package to work\n")
+
 add_subdirectory(libs/r8brain)
-add_subdirectory(app/torch_tests)
+add_subdirectory(src)
+add_subdirectory(app/ipt_example)
 
 
 # min-api config

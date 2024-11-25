@@ -1,236 +1,35 @@
 #include "c74_min.h"
 #include <torch/script.h>
-#include <torch/torch.h>
-#include <CDSPResampler.h>
 #include <chrono>
+
+#include "ipt_classifier.h"
+#include "leaky_integrator.h"
+#include "utility.h"
 
 using namespace c74::min;
 
-struct ClassificationResult {
-    std::vector<float> distribution;
-    std::size_t argmax;
-    double inference_latency_ms;
-};
-
-// ==============================================================================================
-/*
-Retrieve a window of the most recent samples.
-
-Not sure if this is CPU efficient... but you get the idea!
-*/
-class CustomWindowedBuffer : public object<CustomWindowedBuffer> {
-public:
-    CustomWindowedBuffer() : m_large_buffer(m_segment_length, 0.0f) {}
-
-    void add_samples(const std::vector<float>& new_samples) {
-        for (auto sample : new_samples) {
-            m_large_buffer[m_write_index] = sample;
-            m_write_index = (m_write_index + 1) % m_segment_length;
-        }
-    }
-
-    std::vector<float> get_windowed_buffer() { 
-        std::vector<float> windowed_buffer(m_segment_length);
-        size_t start_index = m_write_index;
-
-        for (size_t i = 0; i < m_segment_length; ++i) {
-            windowed_buffer[i] = m_large_buffer[(start_index + i) % m_segment_length];
-        }
-
-        return windowed_buffer;
-    }
-
-    std::size_t size() const {
-        return m_segment_length;
-    }
-
-private:
-    const std::size_t m_segment_length = 7168; // TO DO: to be quired from the model
-    std::vector<float> m_large_buffer;
-    std::size_t m_write_index = 0;
-};
-
-// ==============================================================================================
-
-class IptClassifier {
-public:
-    explicit IptClassifier(const std::string& path, torch::DeviceType device)
-    : m_device(device), m_buffer() {
-        at::init_num_threads();
-        m_model = torch::jit::load(path);
-        m_model.eval();
-        m_model.to(m_device);
-    }
-
-    /*
-    std::optional<ClassificationResult> process(std::vector<double>&& input) {
-        std::optional<ClassificationResult> result = std::nullopt;
-        for (auto& sample: input) {
-            m_buffer[m_write_index] = static_cast<float>(sample);
-            m_write_index = (m_write_index + 1) % m_size;
-
-            if (m_write_index == 0) {
-                result = analyze_buffer();
-            }
-        }
-        return result;
-    }
-    */
-
-    std::optional<ClassificationResult> process(std::vector<double>&& input) {
-        std::optional<ClassificationResult> result = std::nullopt;
-        
-        m_buffer.add_samples(std::vector<float>(input.begin(), input.end()));
-
-        if (m_buffer.size() >= m_segment_length) {
-            auto windowed_buffer = m_buffer.get_windowed_buffer();
-            result = analyze_buffer(windowed_buffer);
-        }
-        
-        return result;
-    }
-
-    ClassificationResult analyze_buffer(const std::vector<float>& windowed_buffer) {
-        auto tensor_in = vector2tensor(windowed_buffer);
-        tensor_in  = tensor_in.to(m_device); // TODO: Might need a critical section here
-        std::vector<torch::jit::IValue> inputs = {tensor_in};
-        auto t1 = std::chrono::high_resolution_clock::now();
-        auto tensor_out = m_model.get_method("forward")(inputs).toTensor();
-        auto t2 = std::chrono::high_resolution_clock::now();
-        tensor_out = tensor_out.to(torch::kCPU);
-
-        auto v = tensor2vector<float>(tensor_out);
-        auto amax = argmax(v);
-        auto latency_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count();
-
-        return ClassificationResult{v, amax, static_cast<double>(latency_ns) / 1e6};
-    }
-
-    static std::size_t argmax(const std::vector<float>& v) {
-        float max = v[0];
-        std::size_t index = 0;
-        for (std::size_t i = 1; i < v.size(); i++) {
-            if (v[i] > max) {
-                max = v[i];
-                index = i;
-            }
-        }
-        return index;
-    }
-
-/*
-private:
-    template<typename T>
-    static std::vector<T> tensor2vector(const at::Tensor& tensor) {
-        std::vector<float> v;
-        v.reserve(tensor.numel());
-        auto out_ptr = tensor.contiguous().data_ptr<float>();
-
-        std::copy(out_ptr, out_ptr + tensor.numel(), std::back_inserter(v));
-
-        return v;
-    }
-
-    static at::Tensor vector2tensor(std::vector<float>& v) {
-        return torch::from_blob(v.data(), {1, 1, static_cast<long long>(v.size())}, torch::kFloat32);
-    }
-
-    torch::DeviceType m_device;
-
-    std::size_t m_size = 7168;
-
-    std::vector<float> m_buffer;
-    std::size_t m_write_index = 0;
-
-    torch::jit::Module m_model;
-
-};
-*/
-
-private:
-    template<typename T>
-    static std::vector<T> tensor2vector(const at::Tensor& tensor) {
-        std::vector<float> v(tensor.numel());
-        auto out_ptr = tensor.contiguous().data_ptr<float>();
-        std::copy(out_ptr, out_ptr + tensor.numel(), v.begin());
-        return v;
-    }
-
-    static at::Tensor vector2tensor(const std::vector<float>& v) {
-        return torch::from_blob(const_cast<float*>(v.data()), {1, 1, static_cast<long long>(v.size())}, torch::kFloat32);
-    }
-
-    torch::DeviceType m_device;
-    torch::jit::Module m_model;
-    CustomWindowedBuffer m_buffer;
-    std::size_t m_segment_length = 7168; // TO DO: to be quired from the model
-};
-
-// ==============================================================================================
-
-class LeakyIntegrator {
-public:
-    std::vector<float> process(const std::vector<float>& input) {
-        auto current_time = std::chrono::system_clock::now();
-
-        if (!m_last_callback || m_tau < 1e-6 || m_previous_value.size() != input.size()) {
-            m_last_callback = current_time;
-            m_previous_value = input;
-            return input;
-        }
-
-        auto elapsed_time = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                current_time - *m_last_callback).count());
-
-        elapsed_time = std::min(m_tau, std::max(0.0, elapsed_time));
-
-        auto output = integrate(input, elapsed_time);
-        m_previous_value = output;
-        m_last_callback = current_time;
-
-        return output;
-    }
-
-    void set_tau(double tau) {
-        m_tau = tau;
-    }
-
-
-private:
-    std::vector<float> integrate(const std::vector<float>& current_value, double elapsed_time) {
-        std::vector<float> result;
-        result.reserve(current_value.size());
-
-        auto dt = elapsed_time / m_tau;
-
-        for (std::size_t i = 0; i < current_value.size(); i++) {
-            result.emplace_back((1 - dt) * m_previous_value.at(i) + dt * current_value.at(i));
-        }
-        return result;
-    }
-
-
-    std::optional<std::chrono::time_point<std::chrono::system_clock>> m_last_callback;
-    std::vector<float> m_previous_value;
-
-    double m_tau = 0.0;
-
-
-};
-
-
-// ==============================================================================================
 
 class ipt_tilde : public object<ipt_tilde>, public vector_operator<> {
 private:
+    std::unique_ptr<IptClassifier> m_classifier;
+
     std::thread m_processing_thread;
     c74::min::fifo<double> m_audio_fifo{16384};
     c74::min::fifo<ClassificationResult> m_event_fifo{100};
 
-    std::atomic<bool> m_running = false;
-    std::atomic<bool> m_enabled = true;
+
+    std::atomic<bool> m_running = false; // lifetime control of internal classification thread
+    std::atomic<bool> m_enabled = true;  // user-controlled flag to manually disable output
+
+    // flag indicating whether m_classifier's `initialize_model()` has been called (independently of success)
+    std::atomic<bool> m_model_initialized = false;
 
     LeakyIntegrator m_integrator;
+
+    std::optional<std::vector<std::string>> m_class_names;
+
+
+
 
 public:
     MIN_DESCRIPTION{""};                   // TODO
@@ -241,6 +40,7 @@ public:
     inlet<> inlet_main{this, "(signal) audio input", ""}; // TODO
 
     outlet<> outlet_main{this, "(int) selected class index", ""};
+    outlet<> outlet_classname{this, "(symbol) selected class name", ""};
     outlet<> outlet_distribution{this, "(list) class probability distribution", ""};
     outlet<> dumpout{this, "(any) dumpout"};
 
@@ -248,11 +48,12 @@ public:
         try {
             auto model_path = parse_model_path(args);
             auto device_type = parse_device_type(args);
-
-            m_processing_thread = std::thread(&ipt_tilde::main_loop, this, std::move(model_path), device_type);
+            m_classifier = std::make_unique<IptClassifier>(model_path, device_type);
         } catch (std::runtime_error& e) {
             error(e.what());
         }
+
+        // Note: Object construction is finalized in `setup` message
     }
 
 
@@ -268,6 +69,16 @@ public:
             this, MIN_FUNCTION {
                 ClassificationResult result;
                 while (m_event_fifo.try_dequeue(result)) {
+                    // If there are events in the event fifo, it means that the main loop is running and
+                    // that the model therefore is initialized, so these assertions should never be hit
+                    assert(m_model_initialized);
+                    assert(m_classifier);
+
+                    if (!m_class_names) {
+                        m_class_names = *m_classifier->get_class_names();
+                    }
+
+
                     auto distribution = m_integrator.process(result.distribution);
 
                     atoms distribution_atms;
@@ -276,7 +87,10 @@ public:
                         distribution_atms.emplace_back(v);
                     }
 
-                    outlet_main.send(static_cast<long>(IptClassifier::argmax(distribution)));
+                    auto index = static_cast<long>(util::argmax(distribution));
+
+                    outlet_main.send(index);
+                    outlet_classname.send(m_class_names->at(static_cast<std::size_t>(index)));
                     outlet_distribution.send(distribution_atms);
 
                     atoms latency{"latency"};
@@ -299,6 +113,7 @@ public:
 
     attribute<bool> verbose{this, "verbose", false};
 
+
     attribute<bool> enabled{this, "enabled", true, setter{
             MIN_FUNCTION {
                 if (args[0].type() == c74::min::message_type::int_argument) {
@@ -311,6 +126,7 @@ public:
             }
     }
     };
+
 
     attribute<double> sensitivity{this, "sensitivity", 1.0, setter{
             MIN_FUNCTION {
@@ -325,6 +141,7 @@ public:
             }
     }
     };
+
 
     attribute<int> sensitivityrange{this, "sensitivityrange", 2000, setter{
             MIN_FUNCTION {
@@ -342,12 +159,112 @@ public:
     };
 
 
-private:
-    void main_loop(std::string&& path, torch::DeviceType device) {
-        std::unique_ptr<IptClassifier> classifier;
+    attribute<double> threshold{this, "threshold", EnergyThreshold::MINIMUM_THRESHOLD, setter{
+            MIN_FUNCTION {
+                if (args.size() == 1 && (args[0].type() == c74::min::message_type::float_argument
+                                         || args[0].type() == c74::min::message_type::int_argument)) {
+                    // Note: ignored on first call, as m_classifier is not yet initialized.
+                    //       In this case, it will be passed through the `setup` message instead
+                    if (m_classifier) {
+                        m_classifier->set_energy_threshold(static_cast<float>(args[0]));
+                    }
 
+                    return args;
+                }
+
+                cerr << "bad argument for message \"threshold\"" << endl;
+                return threshold;
+            }
+    }
+    };
+
+
+    attribute<int> window{this, "window", IptClassifier::DEFAULT_THRESHOLD_WINDOW_MS, setter{
+            MIN_FUNCTION {
+                if (args.size() == 1 && args[0].type() == c74::min::message_type::int_argument) {
+                    // Note: ignored on first call, as m_classifier is not yet initialized.
+                    //       In this case, it will be passed through the `setup` message instead
+                    if (m_classifier) {
+                        m_classifier->set_threshold_window(static_cast<int>(args[0]));
+                    }
+
+                    return args;
+                }
+
+                cerr << "bad argument for message \"threshold\"" << endl;
+                return threshold;
+            }
+    }
+    };
+
+    message<> classnames{this, "classnames", "", setter{MIN_FUNCTION {
+        if (inlet != 0) {
+            cerr << "invalid message \"classnames\" for inlet " << inlet << endl;
+            return {};
+        }
+
+        if (!args.empty()) {
+            cwarn << "extra argument for message \"classnames\"" << endl;
+        }
+
+        if (!m_running) {
+            cerr << "cannot get classnames: no model has been loaded" << endl;
+            return {};
+        }
+
+        // If model has been successfully initialize, we can be sure that the model has valid class names
+        if (!m_class_names) {
+            m_class_names = *m_classifier->get_class_names();
+        }
+
+        atoms names{"classnames"};
+        for (const auto& n : *m_class_names)  {
+            names.emplace_back(n);
+        }
+
+        dumpout.send(names);
+
+        return {};
+    }}};
+
+
+    // Note: Special function called internally by the min-api after the constructor and all attributes
+    // have been initialized. This function cannot be called directly by a user
+    message<> setup{this, "setup", MIN_FUNCTION {
+        m_classifier->set_energy_threshold(threshold.get());
+        m_classifier->set_threshold_window(window.get());
+
+        // since m_classifier is initialized in ctor, we can be sure that it's fully initialized when thread is launched
+        m_processing_thread = std::thread(&ipt_tilde::main_loop, this);
+        return {};
+    }};
+
+
+    // Note: Special function called internally when audio is enabled. This function cannot be called directly by user.
+    //       Also note that this function is called on the main thread, not the audio thread.
+    message<> dspsetup{this, "dspsetup", MIN_FUNCTION {
+        int sample_rate = args[0];
+        int vector_length = args[1];
+
+        // In the rare case of thread initialization not being done by the time dsp is enabled, wait until init finishes
+        while (!m_model_initialized) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+
+        // If model initialization was successful: initialize buffers
+        if (m_running) {
+            m_classifier->initialize_buffers(sample_rate, vector_length);
+        }
+
+        return {};
+    }};
+
+
+private:
+    void main_loop() {
         try {
-            classifier = std::make_unique<IptClassifier>(path, device);
+            m_classifier->initialize_model();
+            m_class_names = m_classifier->get_class_names();
             m_running = true;
         } catch (const std::exception& e) {
             if (verbose.get()) {
@@ -355,10 +272,11 @@ private:
             } else {
                 cerr << "error during loading" << endl;
             }
-            return;
         } catch (...) {
             cerr << "unknown error during loading" << endl;
         }
+
+        m_model_initialized = true; // true independently of success
 
         try {
             while (m_running) {
@@ -370,7 +288,7 @@ private:
                     }
 
                     if (!buffered_audio.empty()) {
-                        auto result = classifier->process(std::move(buffered_audio));
+                        auto result = m_classifier->process(std::move(buffered_audio));
                         if (result) {
                             m_event_fifo.try_enqueue(*result);
                             deliverer.delay(0.0);
@@ -392,6 +310,7 @@ private:
         }
 
     }
+
 
     static std::string parse_model_path(const atoms& args) {
         if (args.empty()) {
