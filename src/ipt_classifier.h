@@ -118,7 +118,8 @@ public:
         }
     }
 
-    std::optional<std::vector<std::string>> get_class_names() const {
+    std::optional<std::vector<std::string>> get_class_names() {
+        std::lock_guard lock{m_mutex};
         if (m_model) {
             return m_model->get_class_names();
         }

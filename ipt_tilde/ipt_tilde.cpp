@@ -26,6 +26,10 @@ private:
 
     LeakyIntegrator m_integrator;
 
+    std::optional<std::vector<std::string>> m_class_names;
+
+
+
 
 public:
     MIN_DESCRIPTION{""};                   // TODO
@@ -36,6 +40,7 @@ public:
     inlet<> inlet_main{this, "(signal) audio input", ""}; // TODO
 
     outlet<> outlet_main{this, "(int) selected class index", ""};
+    outlet<> outlet_classname{this, "(symbol) selected class name", ""};
     outlet<> outlet_distribution{this, "(list) class probability distribution", ""};
     outlet<> dumpout{this, "(any) dumpout"};
 
@@ -64,6 +69,16 @@ public:
             this, MIN_FUNCTION {
                 ClassificationResult result;
                 while (m_event_fifo.try_dequeue(result)) {
+                    // If there are events in the event fifo, it means that the main loop is running and
+                    // that the model therefore is initialized, so these assertions should never be hit
+                    assert(m_model_initialized);
+                    assert(m_classifier);
+
+                    if (!m_class_names) {
+                        m_class_names = *m_classifier->get_class_names();
+                    }
+
+
                     auto distribution = m_integrator.process(result.distribution);
 
                     atoms distribution_atms;
@@ -72,7 +87,10 @@ public:
                         distribution_atms.emplace_back(v);
                     }
 
-                    outlet_main.send(static_cast<long>(util::argmax(distribution)));
+                    auto index = static_cast<long>(util::argmax(distribution));
+
+                    outlet_main.send(index);
+                    outlet_classname.send(m_class_names->at(static_cast<std::size_t>(index)));
                     outlet_distribution.send(distribution_atms);
 
                     atoms latency{"latency"};
@@ -179,6 +197,36 @@ public:
     }
     };
 
+    message<> classnames{this, "classnames", "", setter{MIN_FUNCTION {
+        if (inlet != 0) {
+            cerr << "invalid message \"classnames\" for inlet " << inlet << endl;
+            return {};
+        }
+
+        if (!args.empty()) {
+            cwarn << "extra argument for message \"classnames\"" << endl;
+        }
+
+        if (!m_running) {
+            cerr << "cannot get classnames: no model has been loaded" << endl;
+            return {};
+        }
+
+        // If model has been successfully initialize, we can be sure that the model has valid class names
+        if (!m_class_names) {
+            m_class_names = *m_classifier->get_class_names();
+        }
+
+        atoms names{"classnames"};
+        for (const auto& n : *m_class_names)  {
+            names.emplace_back(n);
+        }
+
+        dumpout.send(names);
+
+        return {};
+    }}};
+
 
     // Note: Special function called internally by the min-api after the constructor and all attributes
     // have been initialized. This function cannot be called directly by a user
@@ -216,6 +264,7 @@ private:
     void main_loop() {
         try {
             m_classifier->initialize_model();
+            m_class_names = m_classifier->get_class_names();
             m_running = true;
         } catch (const std::exception& e) {
             if (verbose.get()) {
