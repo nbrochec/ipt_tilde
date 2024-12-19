@@ -1,31 +1,18 @@
 ## Roadmap
 
-- [x] Add GPU support (MPS)
-- [x] Implement getters in .ts model file:
-    - `get_sr`: get the sampling rate (Hz)
-    - `get_classnames`: get the name of each class in alphabetic order
-    - `get_seglen`: get the number of samples on to make the inference
-- [x] Add outlet that returns the detected classname as a string/symbol. Outlets are then: classname, ~~classindex~~, distribution, latency, dumpout?
-- [x] Add dB threshold to start inference? The user could specify it with a message/slider 
-- [x] Perform resampling before stacking samples for inference (number of samples is unchanged)
-- [x] Set the number of samples to 7168 by default, update with the value retrieve with method `get_seglen`
-- [ ] Path for relative folder "models" or any folder in the Max preferences, to load model without absolute path
+- [ ] licence (CC BY 4.0 ?)
 - [ ] windows compilation
 - [ ] notarization
 - [ ] release
 - [ ] Maxhelp and maxref (Marco)
-- [ ] ~~Add condition to start inference, absolute sum of samples must be higher than 0~~
-- [ ] ~~Implement an onset detector (start inferring when the onset is detected, and stop when it is off).~~
-
 
 ## Build Instructions
 (TODO: Formalize later)
 
 (MacOS / ARM only, for now)
 ```bash
-# TODO: Repo should be renamed ipt_tilde 
-git clone git@github.com:nbrochec/ipt-max.git --recurse-submodules
-cd ipt-max
+git clone git@github.com:nbrochec/ipt_tilde.git --recurse-submodules
+cd ipt_tilde
 cmake -S . -B build DCMAKE_BUILD_TYPE=Release
 cmake --build build --target ipt_tilde -j 8 --verbose
 ```
