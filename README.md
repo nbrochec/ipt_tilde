@@ -1,3 +1,5 @@
+![](/media/logo.png)
+
 ## Roadmap
 
 - [ ] licence (CC BY 4.0 ?)
