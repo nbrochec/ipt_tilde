@@ -142,19 +142,30 @@ public:
 
 
     attribute<int> sensitivityrange{this, "sensitivityrange", 2000, setter{
-            MIN_FUNCTION {
-                if (args.size() == 1
-                    && args[0].type() == c74::min::message_type::int_argument
-                    && static_cast<int>(args[0]) > 0) {
-                    m_integrator.set_tau(sensitivity.get() * (1.0 - static_cast<double>(args[0])));
-                    return args;
-                }
+        MIN_FUNCTION {
+            if (args.size() == 1
+                && args[0].type() == c74::min::message_type::int_argument
+                && static_cast<int>(args[0]) > 0) {
+                
+                // Retrieve the current sensitivity value
+                double current_sensitivity = sensitivity.get();
 
-                cerr << "bad argument for message \"sensitivityrange\"" << endl;
-                return sensitivityrange;
+                // Ensure sensitivity is within bounds
+                current_sensitivity = std::clamp(current_sensitivity, 0.0, 1.0);
+
+                // Update the tau value
+                double new_tau = (1.0 - current_sensitivity) * static_cast<double>(args[0]);
+                new_tau = std::max(new_tau, 1e-6);  // Avoid zero or negative tau
+                m_integrator.set_tau(new_tau);
+
+                // Return the updated sensitivityrange value
+                return args;
             }
-    }
-    };
+
+            cerr << "bad argument for message \"sensitivityrange\"" << endl;
+            return sensitivityrange;
+        }
+    }};
 
 
     attribute<double> threshold{this, "threshold", EnergyThreshold::MINIMUM_THRESHOLD, setter{

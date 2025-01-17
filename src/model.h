@@ -21,7 +21,7 @@ class Model {
 public:
     static const inline std::string CLASSIFY_METHOD = "forward";
 
-    static const inline std::string SAMPLE_RATE_METHOD = "get_attributes"; // TODO: RENAME ONCE MODEL HAS BEEN FIXED
+    static const inline std::string SAMPLE_RATE_METHOD = "get_sr";
     static const inline std::string SEGMENT_LENGTH_METHOD = "get_seglen";
     static const inline std::string CLASS_NAMES_METHOD = "get_classnames";
 
