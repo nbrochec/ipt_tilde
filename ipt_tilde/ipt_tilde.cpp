@@ -32,7 +32,7 @@ private:
 public:
     MIN_DESCRIPTION{""};                   // TODO
     MIN_TAGS{""};                          // TODO
-    MIN_AUTHOR{""};                        // TODO
+    MIN_AUTHOR{"Nicolas Brochec, Joakim Borg, Marco Fiorini"};                        // TODO
     MIN_RELATED{""};                       // TODO
 
     inlet<> inlet_main{this, "(signal) audio input", ""}; // TODO
@@ -61,6 +61,17 @@ public:
             m_processing_thread.join();
         }
     }
+    
+    // BOOT STAMP
+    message<> maxclass_setup{
+        this, "maxclass_setup",
+        [this](const c74::min::atoms &args, const int inlet) -> c74::min::atoms {
+            cout << " ipt~ v1.0 (2025) "
+                << " by Nicolas Brochec, Joakim Borg, Marco Fiorini" << endl;
+            cout << "IRCAM, ERC REACH" << endl;
+            return {};
+        }
+    };
 
 
     timer<> deliverer{
