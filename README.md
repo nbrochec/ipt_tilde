@@ -6,7 +6,7 @@ ipt~ is a Max/MSP external object for real-time classification of instrumental p
 
 This object loads and runs TorchScript (`.ts`) classification models, enabling low latency inference on CPU and MPS devices.
 
-This project is related to [nime2025](https://github.com/nbrochec/nime2025) repository. Where you can find the code used in our paper *Introducing EG-IPT and ipt~: a novel electric guitar dataset and a new Max/MSP object for real-time classification of instrumental playing techniques* presented during [NIME 2025](http://nime2025.org/).
+This project is related to [nime2025](https://github.com/nbrochec/nime2025) repository, where you can find the code used in our paper *Introducing EG-IPT and ipt~: a novel electric guitar dataset and a new Max/MSP object for real-time classification of instrumental playing techniques* presented during [NIME 2025](http://nime2025.org/), and train a classification model for electric guitar playing techniques.
 
 ## 💻 Build Instructions
 <!-- (TODO: Formalize later) -->
