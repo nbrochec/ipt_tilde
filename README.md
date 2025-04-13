@@ -43,15 +43,9 @@ If you are interested in this topic, please check out our other papers:
 - [Brochec et al. (2024)](https://hal.science/hal-04642673) - "Microphone-based Data Augmentation for Automatic Recognition of Instrumental Playing Techniques"
 - [Brochec and Tanaka (2023)](https://hal.science/hal-04263718) - "Toward Real-Time Recognition of Instrumental Playing Techniques for Mixed Music: A Preliminary Analysis"
 
-## 📜 License
+## 📜 License and Fundings
 
 This project is released under a CC-BY-4.0 license.
 
-
-<!-- ## Roadmap
-
-- [ ] licence (CC BY 4.0 ?)
-- [ ] windows compilation
-- [ ] notarization
-- [ ] release
-- [ ] Maxhelp and maxref (Marco) -->
+This research is supported by the European Research Council (ERC) as part of the [Raising Co-creativity in Cyber-Human Musicianship (REACH) Project](https://reach.ircam.fr) directed by Gérard Assayag, under the European Union's Horizon 2020 research and innovation program (GA \#883313). 
+Funding support for this work was provided by a Japanese Ministry of Education, Culture, Sports, Science and Technology (MEXT) scholarship to Nicolas Brochec. 
