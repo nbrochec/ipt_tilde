@@ -11,7 +11,16 @@ This project is related to [nime2025](https://github.com/nbrochec/nime2025) repo
 ## 💻 Build Instructions
 <!-- (TODO: Formalize later) -->
 
-(MacOS / ARM only, for now)
+### Requirements
+
++ macOS 10.13 or later
++ Apple Silicon processor M1 or later (Note: this external doesn't work on Intel processor at the moment)
++ Max 8.6 or later / Max 9.0.3 or later
+
+### Building
+
+- In a terminal, run the following commands:
+
 ```bash
 git clone git@github.com:nbrochec/ipt_tilde.git --recurse-submodules
 cd ipt_tilde
@@ -19,7 +28,9 @@ cmake -S . -B build DCMAKE_BUILD_TYPE=Release
 cmake --build build --target ipt_tilde -j 8 --verbose
 ```
 
-Note: above instructions will result in a CMake warning: `static library kineto_LIBRARY-NOTFOUND not found.`. AFAICT, this doesn't seem to be a problem, compilation works regardless. Using the pre-compiled binaries directly from [pytorch](https://pytorch.org/) will avoid said warnings, but as of version 2.4.1, the performance is 20x worse on CPU than the Anaconda ones. 
+**Note:** The instructions above may trigger a CMake warning:  `static library kineto_LIBRARY-NOTFOUND not found.`  However, this does not appear to affect compilation or functionality.  Using the pre-compiled binaries from [PyTorch](https://pytorch.org/) will avoid this warning, but as of version 2.4.1, their CPU performance is approximately 20x slower compared to the Anaconda-provided binaries.
+
+- Copy the produced `.mxo` external inside `~/Documents/Max 9/Packages/ipt_tilde/externals/`
 
 ## 🧠 About
 
