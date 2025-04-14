@@ -43,7 +43,7 @@ If you use this work in your paper, please consider citing the following:
 ```bibtex
 @inproceedings{fiorini2025egipt,
   title={Introducing EG-IPT and ipt~: a novel electric guitar dataset and a new Max/MSP object for real-time classification of instrumental playing techniques},
-  author={Fiorini, Marco, and Brochec, Nicolas and Borg, Joakim and Pasini, Riccardo},
+  author={Fiorini, Marco and Brochec, Nicolas and Borg, Joakim and Pasini, Riccardo},
   booktitle={NIME 2025},
   year={2025},
   address={Canberra, Australia}
