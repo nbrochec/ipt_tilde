@@ -8,6 +8,25 @@
 
 using namespace c74::min;
 
+struct Docs {
+    static const inline title VERBOSE_TITLE = "Verbose";
+    static const inline title ENABLED_TITLE = "Enabled";
+    static const inline title SENSITIVITY_TITLE = "Sensitivity";
+    static const inline title SENSITIVITY_RANGE_TITLE = "Sensitivity Range";
+    static const inline title THRESHOLD_TITLE = "Threshold";
+    static const inline title WINDOW_TITLE = "Window";
+
+    static const inline description VERBOSE_DESCRIPTION = "TODO";
+    static const inline description ENABLED_DESCRIPTION = "TODO";
+    static const inline description SENSITIVITY_DESCRIPTION = "TODO";
+    static const inline description SENSITIVITY_RANGE_DESCRIPTION = "TODO";
+    static const inline description THRESHOLD_DESCRIPTION = "TODO";
+    static const inline description WINDOW_DESCRIPTION = "TODO";
+
+
+    static const inline description CLASS_NAMES_DESCRIPTION = "TODO";
+};
+
 
 class ipt_tilde : public object<ipt_tilde>, public vector_operator<> {
 private:
@@ -120,10 +139,10 @@ public:
     }
 
 
-    attribute<bool> verbose{this, "verbose", false};
+    attribute<bool> verbose{this, "verbose", false, Docs::VERBOSE_TITLE, Docs::VERBOSE_DESCRIPTION};
 
 
-    attribute<bool> enabled{this, "enabled", true, setter{
+    attribute<bool> enabled{this, "enabled", true, Docs::ENABLED_TITLE, Docs::ENABLED_DESCRIPTION, setter{
             MIN_FUNCTION {
                 if (args[0].type() == c74::min::message_type::int_argument) {
                     m_enabled = static_cast<bool>(args[0]);
@@ -137,7 +156,7 @@ public:
     };
 
 
-    attribute<double> sensitivity{this, "sensitivity", 1.0, setter{
+    attribute<double> sensitivity{this, "sensitivity", 1.0, Docs::SENSITIVITY_TITLE, Docs::SENSITIVITY_DESCRIPTION, setter{
             MIN_FUNCTION {
                 if (args.size() == 1 && args[0].type() == c74::min::message_type::float_argument) {
                     auto tau = std::min(1.0, std::max(0.0, static_cast<double>(args[0])));
@@ -152,7 +171,7 @@ public:
     };
 
 
-    attribute<int> sensitivityrange{this, "sensitivityrange", 2000, setter{
+    attribute<int> sensitivityrange{this, "sensitivityrange", 2000, Docs::SENSITIVITY_RANGE_TITLE, Docs::SENSITIVITY_RANGE_DESCRIPTION, setter{
         MIN_FUNCTION {
             if (args.size() == 1
                 && args[0].type() == c74::min::message_type::int_argument
@@ -179,7 +198,7 @@ public:
     }};
 
 
-    attribute<double> threshold{this, "threshold", EnergyThreshold::MINIMUM_THRESHOLD, setter{
+    attribute<double> threshold{this, "threshold", EnergyThreshold::MINIMUM_THRESHOLD, Docs::THRESHOLD_TITLE, Docs::THRESHOLD_DESCRIPTION, setter{
             MIN_FUNCTION {
                 if (args.size() == 1 && (args[0].type() == c74::min::message_type::float_argument
                                          || args[0].type() == c74::min::message_type::int_argument)) {
@@ -199,7 +218,7 @@ public:
     };
 
 
-    attribute<int> window{this, "window", IptClassifier::DEFAULT_THRESHOLD_WINDOW_MS, setter{
+    attribute<int> window{this, "window", IptClassifier::DEFAULT_THRESHOLD_WINDOW_MS, Docs::WINDOW_TITLE, Docs::WINDOW_DESCRIPTION, setter{
             MIN_FUNCTION {
                 if (args.size() == 1 && (args[0].type() == c74::min::message_type::int_argument
                                          || args[0].type() == c74::min::message_type::float_argument)) {
@@ -218,7 +237,7 @@ public:
     }
     };
 
-    message<> classnames{this, "classnames", "", setter{MIN_FUNCTION {
+    message<> classnames{this, "classnames", Docs::CLASS_NAMES_DESCRIPTION, setter{MIN_FUNCTION {
         if (inlet != 0) {
             cerr << "invalid message \"classnames\" for inlet " << inlet << endl;
             return {};
