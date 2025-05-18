@@ -31,6 +31,7 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
 echo "Copying relevant files"
+cp -R docs "$BUILD_DIR/"
 cp -R externals "$BUILD_DIR/"
 cp -R media "$BUILD_DIR/"
 cp LICENSE "$BUILD_DIR/"

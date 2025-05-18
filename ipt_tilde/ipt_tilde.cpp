@@ -16,7 +16,10 @@ struct Docs {
     static const inline title THRESHOLD_TITLE = "Threshold";
     static const inline title WINDOW_TITLE = "Window";
 
-    static const inline description VERBOSE_DESCRIPTION = "TODO";
+    static const inline description VERBOSE_DESCRIPTION = "Toggle verbose output in case of errors."
+                                                          " When this attribute is enabled, the full pytorch error will"
+                                                          " be printed to the console yada yada blabla more text etc.";
+
     static const inline description ENABLED_DESCRIPTION = "TODO";
     static const inline description SENSITIVITY_DESCRIPTION = "TODO";
     static const inline description SENSITIVITY_RANGE_DESCRIPTION = "TODO";
