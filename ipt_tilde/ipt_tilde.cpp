@@ -16,18 +16,28 @@ struct Docs {
     static const inline title THRESHOLD_TITLE = "Threshold";
     static const inline title WINDOW_TITLE = "Window";
 
-    static const inline description VERBOSE_DESCRIPTION = "Toggle verbose output in case of errors."
-                                                          " When this attribute is enabled, the full pytorch error will"
-                                                          " be printed to the console yada yada blabla more text etc.";
+    static const inline description VERBOSE_DESCRIPTION = "Enable or disable verbose logging."
+                                                          " When set to @verbose 1, the object provides detailed"
+                                                          " logging to the Max console, useful for debugging.";
 
-    static const inline description ENABLED_DESCRIPTION = "TODO";
-    static const inline description SENSITIVITY_DESCRIPTION = "TODO";
-    static const inline description SENSITIVITY_RANGE_DESCRIPTION = "TODO";
-    static const inline description THRESHOLD_DESCRIPTION = "TODO";
-    static const inline description WINDOW_DESCRIPTION = "TODO";
-
-
-    static const inline description CLASS_NAMES_DESCRIPTION = "TODO";
+    static const inline description ENABLED_DESCRIPTION = "Enable or disable classification model operation.";
+    static const inline description SENSITIVITY_DESCRIPTION = "Adjust the sensitivity of classification output."
+                                                            " A higher sensitivity allows quicker reactions to changes in"
+                                                            " audio input, while lower sensitivity smooths the output.";   
+    static const inline description SENSITIVITY_RANGE_DESCRIPTION = "Set the time window for sensitivity scaling."
+                                                            " Control the duration in milliseconds of the temporal window"
+                                                            " over which the model's confidence is smoothed.";
+    static const inline description THRESHOLD_DESCRIPTION = "Set the energy threshold for classification."
+                                                            " Controls the minimum energy level in deciBels required for a"
+                                                            " signal to be considered for classification. Adjust to ignore"
+                                                            " background noise or quiet input.";
+    static const inline description WINDOW_DESCRIPTION = "Set the sliding window size for energy thresholding."
+                                                            " Specifies the time window, in milliseconds, over which the"
+                                                            " energy threshold is applied. Larger windows smooth" 
+                                                            " the thresholding response.";
+    static const inline description CLASS_NAMES_DESCRIPTION = "Retrieve the list of class names from the model."
+                                                            " Outputs the class names associated with the loaded model "
+                                                            " via the dumpout outlet.";
 };
 
 
@@ -52,19 +62,20 @@ private:
 
 
 public:
-    MIN_DESCRIPTION{""};                   // TODO
-    MIN_TAGS{""};                          // TODO
-    MIN_AUTHOR{"Nicolas Brochec, Joakim Borg, Marco Fiorini"};                        // TODO
+    MIN_DESCRIPTION{"Real-time playing technique recognition for live audio input."
+    " Outputs the recognized class index, name, and class distribution."};
+    MIN_TAGS{""}; // TODO
+    MIN_AUTHOR{"Nicolas Brochec, Joakim Borg, Marco Fiorini"};
     MIN_RELATED{""};                       // TODO
 
-    inlet<> inlet_main{this, "(signal) audio input", ""}; // TODO
+    inlet<> inlet_main{this, "(signal) audio input", ""};
 
-    outlet<> outlet_main{this, "(int) selected class index", ""};
-    outlet<> outlet_classname{this, "(symbol) selected class name", ""};
-    outlet<> outlet_distribution{this, "(list) class probability distribution", ""};
-    outlet<> dumpout{this, "(any) dumpout"};
+    outlet<> outlet_main{this, "(int) recognized class index", "Outputs the index of the class with higher detection probability."};
+    outlet<> outlet_classname{this, "(symbol) recognized class name", "Outputs the name of selected class with higher detection probability."};
+    outlet<> outlet_distribution{this, "(list) class probability distribution", "Outputs the class probability distribution as a list."};
+    outlet<> dumpout{this, "(any) dumpout", "Outputs miscellaneous data like latency and class names."};
 
-    explicit ipt_tilde(const atoms& args = {}) {
+    explicit ipt_tilde(const atoms& args = {}) { 
         try {
             auto model_path = parse_model_path(args);
             auto device_type = parse_device_type(args);
