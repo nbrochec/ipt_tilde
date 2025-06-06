@@ -60,9 +60,8 @@ private:
 
     std::optional<std::vector<std::string>> m_class_names;
 
-
 public:
-    MIN_DESCRIPTION{"Real-time playing technique recognition for live audio input."
+    MIN_DESCRIPTION{"Real-time Instrumental Playing Technique (IPT) recognition using a pre-trained classification model."
     " Outputs the recognized class index, name, and class distribution."};
     MIN_TAGS{""}; // TODO
     MIN_AUTHOR{"Nicolas Brochec, Joakim Borg, Marco Fiorini"};
@@ -74,6 +73,9 @@ public:
     outlet<> outlet_classname{this, "(symbol) recognized class name", "Outputs the name of selected class with higher detection probability."};
     outlet<> outlet_distribution{this, "(list) class probability distribution", "Outputs the class probability distribution as a list."};
     outlet<> dumpout{this, "(any) dumpout", "Outputs miscellaneous data like latency and class names."};
+
+    argument<symbol> model_path_arg {this, "model", "Filepath to the TorchScript model to load. This argument is required." };
+    argument<symbol> device_arg {this, "device", "Device to use for inference: 'cpu', 'cuda', or 'mps'. Optional, defaults to 'cpu'." };
 
     explicit ipt_tilde(const atoms& args = {}) { 
         try {
