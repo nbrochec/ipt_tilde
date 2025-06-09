@@ -1,4 +1,6 @@
-<!-- ![](/media/logo.png) -->
+<div align="center">
+  <img src="/media/logo.png" alt="ipt~ logo" width="300"/>
+</div>
 
 # ipt_tilde
 
