@@ -8,6 +8,8 @@ This object loads and runs TorchScript (`.ts`) classification models, enabling l
 
 This project is related to [nime2025](https://github.com/nbrochec/nime2025) repository, where you can find the code used in our paper *Introducing EG-IPT and ipt~: a novel electric guitar dataset and a new Max/MSP object for real-time classification of instrumental playing techniques* presented during [NIME 2025](http://nime2025.org/), and train a classification model for electric guitar playing techniques.
 
+👉 Train your own playing techniques recognition model in following instructions from our [ipt_recognition](http://github.com/nbrochec/ipt_recognition) repository.
+
 ### 🎥 Demo Video
 A demonstration video of ipt~ detecting in real-time Instrumental Playing Techniques from the EG-IPT dataset is available [here](https://youtu.be/PFiWNnOd-vg).
 
