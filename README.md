@@ -61,7 +61,7 @@ If you are interested in this topic, please check out our other papers:
 
 ## 📜 License and Fundings
 
-This project is released under a CC-BY-4.0 license.
+This project is released under a CC-BY-NC-4.0 license.
 
 This research is supported by the European Research Council (ERC) as part of the [Raising Co-creativity in Cyber-Human Musicianship (REACH) Project](https://reach.ircam.fr) directed by Gérard Assayag, under the European Union's Horizon 2020 research and innovation program (GA \#883313). 
 Funding support for this work was provided by a Japanese Ministry of Education, Culture, Sports, Science and Technology (MEXT) scholarship to Nicolas Brochec. 
