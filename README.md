@@ -58,9 +58,9 @@ If you use this work in your paper, please consider citing the following:
 ## 📚 Related Work
 
 If you are interested in this topic, please check out our other papers:
+- [Brochec et al. (2025)](https://hal.science/hal-05061669) - "Interactive Music Co-Creation with an Instrumental Technique-Aware System: A Case Study with Flute and Somax2"
 - [Fiorini and Brochec (2024)](https://hal.science/hal-04635907) - "Guiding Co-Creative Musical Agents through Real-Time Flute Instrumental Playing Technique Recognition"
 - [Brochec et al. (2024)](https://hal.science/hal-04642673) - "Microphone-based Data Augmentation for Automatic Recognition of Instrumental Playing Techniques"
-- [Brochec and Tanaka (2023)](https://hal.science/hal-04263718) - "Toward Real-Time Recognition of Instrumental Playing Techniques for Mixed Music: A Preliminary Analysis"
 
 ## 📜 License and Fundings
 
