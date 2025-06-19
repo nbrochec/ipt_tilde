@@ -20,23 +20,27 @@ struct Docs {
                                                           " When set to @verbose 1, the object provides detailed"
                                                           " logging to the Max console, useful for debugging.";
 
-    static const inline description ENABLED_DESCRIPTION = "Enable or disable classification model operation.";
+    static const inline description ENABLED_DESCRIPTION = "Enable or disable classification model operation."
+                                                            " When set to @enabled 1, the model is operating."
+                                                            " When set to @enabled 0, the model is disabled.";
     static const inline description SENSITIVITY_DESCRIPTION = "Adjust the sensitivity of classification output."
-                                                            " A higher sensitivity allows quicker reactions to changes in"
-                                                            " audio input, while lower sensitivity smooths the output.";   
+                                                            " Use a float between 0. and 1. A higher sensitivity allows"
+                                                            " quicker reactions to changes in audio input, while lower"
+                                                            " sensitivity smooths the output.";   
     static const inline description SENSITIVITY_RANGE_DESCRIPTION = "Set the time window for sensitivity scaling."
-                                                            " Control the duration in milliseconds of the temporal window"
-                                                            " over which the model's confidence is smoothed.";
+                                                            " Use a float between 0. and 2000. Control the duration"
+                                                            " in milliseconds of the temporal window over which"
+                                                            " the model's confidence is smoothed.";
     static const inline description THRESHOLD_DESCRIPTION = "Set the energy threshold for classification."
-                                                            " Controls the minimum energy level in deciBels required for a"
-                                                            " signal to be considered for classification. Adjust to ignore"
-                                                            " background noise or quiet input.";
+                                                            " Use a float between -70 and 0. Controls the minimum energy"
+                                                            " level in dB required for a signal to be considered for"
+                                                            " classification. Adjust to ignore background noise or quiet input.";
     static const inline description WINDOW_DESCRIPTION = "Set the sliding window size for energy thresholding."
-                                                            " Specifies the time window, in milliseconds, over which the"
-                                                            " energy threshold is applied. Larger windows smooth" 
-                                                            " the thresholding response.";
-    static const inline description CLASS_NAMES_DESCRIPTION = "Retrieve the list of class names from the model."
-                                                            " Outputs the class names associated with the loaded model "
+                                                            " Specifies the time window with a float, in milliseconds,"
+                                                            " over which the energy threshold is applied. Larger" 
+                                                            " windows smooth the thresholding response.";
+    static const inline description CLASS_NAMES_DESCRIPTION = "Message to retrieve the list of class names from the model."
+                                                            " Outputs the class names associated with the loaded model"
                                                             " via the dumpout outlet.";
 };
 
@@ -61,10 +65,10 @@ private:
     std::optional<std::vector<std::string>> m_class_names;
 
 public:
-    MIN_DESCRIPTION{"Real-time Instrumental Playing Technique (IPT) recognition using a pre-trained classification model. Outputs the recognized class index, name, and class distribution."};
+    MIN_DESCRIPTION{"Real-time Instrumental Playing Technique (IPT) recognition using a pre-trained classification model. The ipt~ object analyzes incoming audio in real time and classifies instrumental playing techniques using a pre-trained Convolutional Neural Network (CNN) model. It provides the recognized class index, the class name, and the probability distribution of all classes."};
     MIN_TAGS{""}; // TODO
     MIN_AUTHOR{"Nicolas Brochec, Joakim Borg, Marco Fiorini"};
-    MIN_RELATED{""};                       // TODO
+    MIN_RELATED{""};  // TODO
 
     inlet<> inlet_main{this, "(signal) audio input", ""};
 
@@ -100,9 +104,9 @@ public:
     message<> maxclass_setup{
         this, "maxclass_setup",
         [this](const c74::min::atoms &args, const int inlet) -> c74::min::atoms {
-            cout << " ipt~ v1.0 (2025) "
+            cout << " ipt~ v1.0.0 (2025) "
                 << " by Nicolas Brochec, Joakim Borg, Marco Fiorini" << endl;
-            cout << "IRCAM, ERC REACH" << endl;
+            cout << " Tokyo University of the Arts, IRCAM, ERC REACH" << endl;
             return {};
         }
     };
