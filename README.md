@@ -1,4 +1,6 @@
-<!-- ![](/media/logo.png) -->
+<div align="center">
+  <img src="media/logo.png" alt="ipt~ logo" width="300"/>
+</div>
 
 # ipt_tilde
 
@@ -10,32 +12,20 @@ This project is related to [nime2025](https://github.com/nbrochec/nime2025) repo
 
 👉 Train your own playing techniques recognition model in following instructions from our [ipt_recognition](http://github.com/nbrochec/ipt_recognition) repository.
 
-### 🎥 Demo Video
-A demonstration video of ipt~ detecting in real-time Instrumental Playing Techniques from the EG-IPT dataset is available [here](https://youtu.be/PFiWNnOd-vg).
-
-## 💻 Build Instructions
-<!-- (TODO: Formalize later) -->
-
-### Requirements
+### ⚙️ Requirements
 
 + macOS 10.13 or later
 + Apple Silicon processor M1 or later (Note: this external doesn't work on Intel processors at the moment)
 + Max 8.6 or later / Max 9.0.3 or later
 
-### Building
+### 💾 Installation
 
-- In a terminal, run the following commands:
-
-```bash
-git clone git@github.com:nbrochec/ipt_tilde.git --recurse-submodules
-cd ipt_tilde
-cmake -S . -B build DCMAKE_BUILD_TYPE=Release
-cmake --build build --target ipt_tilde -j 8 --verbose
-```
-
-**Note:** The instructions above may trigger a CMake warning:  `static library kineto_LIBRARY-NOTFOUND not found.`  However, this does not appear to affect compilation or functionality.  Using the pre-compiled binaries from [PyTorch](https://pytorch.org/) will avoid this warning, but as of version 2.4.1, their CPU performance is approximately 20x slower compared to the Anaconda-provided binaries.
-
-- Copy the produced `.mxo` external inside `~/Documents/Max 9/Packages/ipt_tilde/externals/`
++ Go to [Releases](https://github.com/nbrochec/ipt_tilde/releases) and download the latest version of ipt~ (`ipt_tilde.dmg`)
++ Copy the extracted `ipt_tilde` folder into the Packages folder in your Max folder (by default, this is `~/Documents/Max 9/Packages`)
++ You're done!
+ 
+### 🎥 Demo Video
+A demonstration video of ipt~ detecting in real-time Instrumental Playing Techniques from the EG-IPT dataset is available [here](https://youtu.be/PFiWNnOd-vg).
 
 ## 🧠 About
 
@@ -58,6 +48,22 @@ If you are interested in this topic, please check out our other papers:
 - [Brochec et al. (2025)](https://hal.science/hal-05061669) - "Interactive Music Co-Creation with an Instrumental Technique-Aware System: A Case Study with Flute and Somax2"
 - [Fiorini and Brochec (2024)](https://hal.science/hal-04635907) - "Guiding Co-Creative Musical Agents through Real-Time Flute Instrumental Playing Technique Recognition"
 - [Brochec et al. (2024)](https://hal.science/hal-04642673) - "Microphone-based Data Augmentation for Automatic Recognition of Instrumental Playing Techniques"
+
+## 💻 Build Instructions
+
+- In a terminal, run the following commands:
+
+```bash
+git clone git@github.com:nbrochec/ipt_tilde.git --recurse-submodules
+cd ipt_tilde
+cmake -S . -B build DCMAKE_BUILD_TYPE=Release
+cmake --build build --target ipt_tilde -j 8 --verbose
+```
+
+**Note:** The instructions above may trigger a CMake warning:  `static library kineto_LIBRARY-NOTFOUND not found.`  However, this does not appear to affect compilation or functionality.  Using the pre-compiled binaries from [PyTorch](https://pytorch.org/) will avoid this warning, but as of version 2.4.1, their CPU performance is approximately 20x slower compared to the Anaconda-provided binaries.
+
+- Copy the produced `.mxo` external inside `~/Documents/Max 9/Packages/ipt_tilde/externals/`
+
 
 ## 📜 License and Fundings
 

@@ -8,6 +8,42 @@
 
 using namespace c74::min;
 
+struct Docs {
+    static const inline title VERBOSE_TITLE = "Verbose";
+    static const inline title ENABLED_TITLE = "Enabled";
+    static const inline title SENSITIVITY_TITLE = "Sensitivity";
+    static const inline title SENSITIVITY_RANGE_TITLE = "Sensitivity Range";
+    static const inline title THRESHOLD_TITLE = "Threshold";
+    static const inline title WINDOW_TITLE = "Window";
+
+    static const inline description VERBOSE_DESCRIPTION = "Enable or disable verbose logging."
+                                                          " When set to @verbose @1, the object provides detailed"
+                                                          " logging to the Max console, useful for debugging.";
+
+    static const inline description ENABLED_DESCRIPTION = "Enable or disable classification model operation."
+                                                            " When set to @enabled @1, the model is operating."
+                                                            " When set to @enabled @0, the model is disabled.";
+    static const inline description SENSITIVITY_DESCRIPTION = "Adjust the sensitivity of classification output."
+                                                            " Use a @float between @0. and @1. A higher sensitivity allows"
+                                                            " quicker reactions to changes in audio input, while lower"
+                                                            " sensitivity smooths the output.";   
+    static const inline description SENSITIVITY_RANGE_DESCRIPTION = "Set the time window for sensitivity scaling."
+                                                            " Use a @float between @0. and @2000. Control the duration"
+                                                            " in milliseconds of the temporal window over which"
+                                                            " the model's confidence is smoothed.";
+    static const inline description THRESHOLD_DESCRIPTION = "Set the energy threshold for classification."
+                                                            " Use a @float between @-70 and @0. Controls the minimum energy"
+                                                            " level in dB required for a signal to be considered for"
+                                                            " classification. Adjust to ignore background noise or quiet input.";
+    static const inline description WINDOW_DESCRIPTION = "Set the sliding window size for energy thresholding."
+                                                            " Specifies the time window with a @float, in milliseconds,"
+                                                            " over which the energy threshold is applied. Larger" 
+                                                            " windows smooth the thresholding response.";
+    static const inline description CLASS_NAMES_DESCRIPTION = "Message to retrieve the list of class names from the model."
+                                                            " Outputs the class names associated with the loaded model"
+                                                            " via the dumpout outlet.";
+};
+
 
 class ipt_tilde : public object<ipt_tilde>, public vector_operator<> {
 private:
@@ -28,21 +64,23 @@ private:
 
     std::optional<std::vector<std::string>> m_class_names;
 
-
 public:
-    MIN_DESCRIPTION{""};                   // TODO
-    MIN_TAGS{""};                          // TODO
-    MIN_AUTHOR{"Nicolas Brochec, Joakim Borg, Marco Fiorini"};                        // TODO
-    MIN_RELATED{""};                       // TODO
+    MIN_DESCRIPTION{"Real-time Instrumental Playing Technique (IPT) recognition using a pre-trained classification model."};
+    MIN_TAGS{""}; // TODO
+    MIN_AUTHOR{"Nicolas Brochec, Joakim Borg, Marco Fiorini"};
+    MIN_RELATED{""};  // TODO
 
-    inlet<> inlet_main{this, "(signal) audio input", ""}; // TODO
+    inlet<> inlet_main{this, "(signal) audio input", ""};
 
-    outlet<> outlet_main{this, "(int) selected class index", ""};
-    outlet<> outlet_classname{this, "(symbol) selected class name", ""};
-    outlet<> outlet_distribution{this, "(list) class probability distribution", ""};
-    outlet<> dumpout{this, "(any) dumpout"};
+    outlet<> outlet_main{this, "(int) recognized class index", "Outputs the index of the class with higher detection probability."};
+    outlet<> outlet_classname{this, "(symbol) recognized class name", "Outputs the name of selected class with higher detection probability."};
+    outlet<> outlet_distribution{this, "(list) class probability distribution", "Outputs the class probability distribution as a list."};
+    outlet<> dumpout{this, "(any) dumpout", "Outputs miscellaneous data like latency and class names."};
 
-    explicit ipt_tilde(const atoms& args = {}) {
+    argument<symbol> model_path_arg {this, "model", "Filepath to the TorchScript model to load. This argument is required. Use absolute path for your model or add your model to the Max file preferences list." };
+    argument<symbol> device_arg {this, "device", "Device to use for inference: 'CPU', 'CUDA', or 'MPS'. Optional, defaults to 'CPU'." };
+
+    explicit ipt_tilde(const atoms& args = {}) { 
         try {
             auto model_path = parse_model_path(args);
             auto device_type = parse_device_type(args);
@@ -66,9 +104,9 @@ public:
     message<> maxclass_setup{
         this, "maxclass_setup",
         [this](const c74::min::atoms &args, const int inlet) -> c74::min::atoms {
-            cout << " ipt~ v1.0 (2025) "
+            cout << " ipt~ v1.0.0 (2025) "
                 << " by Nicolas Brochec, Joakim Borg, Marco Fiorini" << endl;
-            cout << "IRCAM, ERC REACH" << endl;
+            cout << " Tokyo University of the Arts, IRCAM, ERC REACH" << endl;
             return {};
         }
     };
@@ -120,10 +158,10 @@ public:
     }
 
 
-    attribute<bool> verbose{this, "verbose", false};
+    attribute<bool> verbose{this, "verbose", false, Docs::VERBOSE_TITLE, Docs::VERBOSE_DESCRIPTION};
 
 
-    attribute<bool> enabled{this, "enabled", true, setter{
+    attribute<bool> enabled{this, "enabled", true, Docs::ENABLED_TITLE, Docs::ENABLED_DESCRIPTION, setter{
             MIN_FUNCTION {
                 if (args[0].type() == c74::min::message_type::int_argument) {
                     m_enabled = static_cast<bool>(args[0]);
@@ -137,7 +175,7 @@ public:
     };
 
 
-    attribute<double> sensitivity{this, "sensitivity", 1.0, setter{
+    attribute<double> sensitivity{this, "sensitivity", 1.0, Docs::SENSITIVITY_TITLE, Docs::SENSITIVITY_DESCRIPTION, setter{
             MIN_FUNCTION {
                 if (args.size() == 1 && args[0].type() == c74::min::message_type::float_argument) {
                     auto tau = std::min(1.0, std::max(0.0, static_cast<double>(args[0])));
@@ -152,7 +190,7 @@ public:
     };
 
 
-    attribute<int> sensitivityrange{this, "sensitivityrange", 2000, setter{
+    attribute<int> sensitivityrange{this, "sensitivityrange", 2000, Docs::SENSITIVITY_RANGE_TITLE, Docs::SENSITIVITY_RANGE_DESCRIPTION, setter{
         MIN_FUNCTION {
             if (args.size() == 1
                 && args[0].type() == c74::min::message_type::int_argument
@@ -179,7 +217,7 @@ public:
     }};
 
 
-    attribute<double> threshold{this, "threshold", EnergyThreshold::MINIMUM_THRESHOLD, setter{
+    attribute<double> threshold{this, "threshold", EnergyThreshold::MINIMUM_THRESHOLD, Docs::THRESHOLD_TITLE, Docs::THRESHOLD_DESCRIPTION, setter{
             MIN_FUNCTION {
                 if (args.size() == 1 && (args[0].type() == c74::min::message_type::float_argument
                                          || args[0].type() == c74::min::message_type::int_argument)) {
@@ -199,7 +237,7 @@ public:
     };
 
 
-    attribute<int> window{this, "window", IptClassifier::DEFAULT_THRESHOLD_WINDOW_MS, setter{
+    attribute<int> window{this, "window", IptClassifier::DEFAULT_THRESHOLD_WINDOW_MS, Docs::WINDOW_TITLE, Docs::WINDOW_DESCRIPTION, setter{
             MIN_FUNCTION {
                 if (args.size() == 1 && (args[0].type() == c74::min::message_type::int_argument
                                          || args[0].type() == c74::min::message_type::float_argument)) {
@@ -218,7 +256,7 @@ public:
     }
     };
 
-    message<> classnames{this, "classnames", "", setter{MIN_FUNCTION {
+    message<> classnames{this, "classnames", Docs::CLASS_NAMES_DESCRIPTION, setter{MIN_FUNCTION {
         if (inlet != 0) {
             cerr << "invalid message \"classnames\" for inlet " << inlet << endl;
             return {};
