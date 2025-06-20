@@ -17,26 +17,26 @@ struct Docs {
     static const inline title WINDOW_TITLE = "Window";
 
     static const inline description VERBOSE_DESCRIPTION = "Enable or disable verbose logging."
-                                                          " When set to @verbose 1, the object provides detailed"
+                                                          " When set to @verbose @1, the object provides detailed"
                                                           " logging to the Max console, useful for debugging.";
 
     static const inline description ENABLED_DESCRIPTION = "Enable or disable classification model operation."
-                                                            " When set to @enabled 1, the model is operating."
-                                                            " When set to @enabled 0, the model is disabled.";
+                                                            " When set to @enabled @1, the model is operating."
+                                                            " When set to @enabled @0, the model is disabled.";
     static const inline description SENSITIVITY_DESCRIPTION = "Adjust the sensitivity of classification output."
-                                                            " Use a float between 0. and 1. A higher sensitivity allows"
+                                                            " Use a @float between @0. and @1. A higher sensitivity allows"
                                                             " quicker reactions to changes in audio input, while lower"
                                                             " sensitivity smooths the output.";   
     static const inline description SENSITIVITY_RANGE_DESCRIPTION = "Set the time window for sensitivity scaling."
-                                                            " Use a float between 0. and 2000. Control the duration"
+                                                            " Use a @float between @0. and @2000. Control the duration"
                                                             " in milliseconds of the temporal window over which"
                                                             " the model's confidence is smoothed.";
     static const inline description THRESHOLD_DESCRIPTION = "Set the energy threshold for classification."
-                                                            " Use a float between -70 and 0. Controls the minimum energy"
+                                                            " Use a @float between @-70 and @0. Controls the minimum energy"
                                                             " level in dB required for a signal to be considered for"
                                                             " classification. Adjust to ignore background noise or quiet input.";
     static const inline description WINDOW_DESCRIPTION = "Set the sliding window size for energy thresholding."
-                                                            " Specifies the time window with a float, in milliseconds,"
+                                                            " Specifies the time window with a @float, in milliseconds,"
                                                             " over which the energy threshold is applied. Larger" 
                                                             " windows smooth the thresholding response.";
     static const inline description CLASS_NAMES_DESCRIPTION = "Message to retrieve the list of class names from the model."
@@ -65,7 +65,7 @@ private:
     std::optional<std::vector<std::string>> m_class_names;
 
 public:
-    MIN_DESCRIPTION{"Real-time Instrumental Playing Technique (IPT) recognition using a pre-trained classification model. The ipt~ object analyzes incoming audio in real time and classifies instrumental playing techniques using a pre-trained Convolutional Neural Network (CNN) model. It provides the recognized class index, the class name, and the probability distribution of all classes."};
+    MIN_DESCRIPTION{"Real-time Instrumental Playing Technique (IPT) recognition using a pre-trained classification model."};
     MIN_TAGS{""}; // TODO
     MIN_AUTHOR{"Nicolas Brochec, Joakim Borg, Marco Fiorini"};
     MIN_RELATED{""};  // TODO
@@ -77,7 +77,7 @@ public:
     outlet<> outlet_distribution{this, "(list) class probability distribution", "Outputs the class probability distribution as a list."};
     outlet<> dumpout{this, "(any) dumpout", "Outputs miscellaneous data like latency and class names."};
 
-    argument<symbol> model_path_arg {this, "model", "Filepath to the TorchScript model to load. This argument is required." };
+    argument<symbol> model_path_arg {this, "model", "Filepath to the TorchScript model to load. This argument is required. Use absolute path for your model or add your model to the Max file preferences list." };
     argument<symbol> device_arg {this, "device", "Device to use for inference: 'CPU', 'CUDA', or 'MPS'. Optional, defaults to 'CPU'." };
 
     explicit ipt_tilde(const atoms& args = {}) { 
