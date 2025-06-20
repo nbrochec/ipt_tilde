@@ -20,7 +20,7 @@ This project is related to [nime2025](https://github.com/nbrochec/nime2025) repo
 
 ### 💾 Installation
 
-+ Go to [Releases]([https://github.com/nbrochec/ipt_tilde/releases) and download the latest version of ipt~ (`ipt_tilde.dmg`)
++ Go to [Releases](https://github.com/nbrochec/ipt_tilde/releases) and download the latest version of ipt~ (`ipt_tilde.dmg`)
 + Copy the extracted `ipt_tilde` folder into the Packages folder in your Max folder (by default, this is `~/Documents/Max 9/Packages`)
 + You're done!
  
