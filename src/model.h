@@ -50,6 +50,9 @@ public:
         auto t1 = std::chrono::high_resolution_clock::now();
         auto tensor_out = m_model.get_method("forward")(inputs).toTensor();
         auto t2 = std::chrono::high_resolution_clock::now();
+        
+        tensor_out = torch::softmax(tensor_out, /*dim=*/-1);
+        
         tensor_out = tensor_out.to(torch::kCPU);
 
         auto v = tensor2vector(tensor_out);
