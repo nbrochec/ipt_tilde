@@ -6,6 +6,8 @@
 
 ipt~ is a Max/MSP external object for real-time classification of instrumental playing techniques.
 
+ipt~ is a core component of **SPIRIT** (System for Real-Time Recognition of Instrumental Playing Techniques).
+
 This object loads and runs TorchScript (`.ts`) classification models, enabling low latency inference on CPU and MPS devices.
 
 This project is related to [nime2025](https://github.com/nbrochec/nime2025) repository, where you can find the code used in our paper *Introducing EG-IPT and ipt~: a novel electric guitar dataset and a new Max/MSP object for real-time classification of instrumental playing techniques* presented during [NIME 2025](http://nime2025.org/), and train a classification model for electric guitar playing techniques.
@@ -23,7 +25,7 @@ This project is related to [nime2025](https://github.com/nbrochec/nime2025) repo
 + Go to [Releases](https://github.com/nbrochec/ipt_tilde/releases) and download the latest version of ipt~ (`ipt_tilde.dmg`)
 + Copy the extracted `ipt_tilde` folder into the Packages folder in your Max folder (by default, this is `~/Documents/Max 9/Packages`)
 + You're done!
- 
+
 ### 🎥 Demo Video
 A demonstration video of ipt~ detecting in real-time Instrumental Playing Techniques from the EG-IPT dataset is available [here](https://youtu.be/PFiWNnOd-vg).
 
