@@ -15,6 +15,7 @@ struct Docs {
     static const inline title SENSITIVITY_RANGE_TITLE = "Sensitivity Range";
     static const inline title THRESHOLD_TITLE = "Threshold";
     static const inline title WINDOW_TITLE = "Window";
+    static const inline title CONFIDENCE_TITLE = "Confidence";
 
     static const inline description VERBOSE_DESCRIPTION = "Enable or disable verbose logging."
                                                           " When set to @verbose @1, the object provides detailed"
@@ -42,6 +43,11 @@ struct Docs {
     static const inline description CLASS_NAMES_DESCRIPTION = "Message to retrieve the list of class names from the model."
                                                             " Outputs the class names associated with the loaded model"
                                                             " via the dumpout outlet.";
+    static const inline description CONFIDENCE_DESCRIPTION = "Set the minimum confidence threshold for classification output."
+                                                            " Use a @float between @0. and @1. When the highest probability"
+                                                            " is below this threshold, outputs 'no_confidence' instead of"
+                                                            " the predicted class name.";
+
 };
 
 
@@ -104,9 +110,9 @@ public:
     message<> maxclass_setup{
         this, "maxclass_setup",
         [this](const c74::min::atoms &args, const int inlet) -> c74::min::atoms {
-            cout << " ipt~ v1.0.0 (2025) "
+            cout << " ipt~ v1.1.0 (2026) "
                 << " by Nicolas Brochec, Joakim Borg, Marco Fiorini" << endl;
-            cout << " Tokyo University of the Arts, IRCAM, ERC REACH" << endl;
+            cout << " IRCAM, REPMUS REACH" << endl;
             return {};
         }
     };
@@ -135,10 +141,21 @@ public:
                     }
 
                     auto index = static_cast<long>(util::argmax(distribution));
+                    auto max_confidence = distribution[static_cast<std::size_t>(index)];
 
-                    outlet_main.send(index);
-                    outlet_classname.send(m_class_names->at(static_cast<std::size_t>(index)));
-                    outlet_distribution.send(distribution_atms);
+                    if (max_confidence >= confidence.get()) {
+                        outlet_main.send(index);
+                        outlet_classname.send(m_class_names->at(static_cast<std::size_t>(index)));
+                        outlet_distribution.send(distribution_atms);
+                    } else {
+                        outlet_main.send(-1);
+                        outlet_classname.send("no_confidence");
+                        outlet_distribution.send(distribution_atms);
+                    }
+                    
+//                    outlet_main.send(index);
+//                    outlet_classname.send(m_class_names->at(static_cast<std::size_t>(index)));
+//                    outlet_distribution.send(distribution_atms);
 
                     atoms latency{"latency"};
                     latency.emplace_back(result.inference_latency_ms);
@@ -252,6 +269,19 @@ public:
 
                 cerr << "bad argument for message \"threshold\"" << endl;
                 return threshold;
+            }
+    }
+    };
+    
+    attribute<double> confidence{this, "confidence", 0.0, Docs::CONFIDENCE_TITLE, Docs::CONFIDENCE_DESCRIPTION, setter{
+            MIN_FUNCTION {
+                if (args.size() == 1 && args[0].type() == c74::min::message_type::float_argument) {
+                    auto conf = std::min(1.0, std::max(0.0, static_cast<double>(args[0])));
+                    return {conf};
+                }
+
+                cerr << "bad argument for message \"confidence\"" << endl;
+                return confidence;
             }
     }
     };
