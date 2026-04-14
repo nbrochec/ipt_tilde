@@ -111,8 +111,9 @@ public:
         this, "maxclass_setup",
         [this](const c74::min::atoms &args, const int inlet) -> c74::min::atoms {
             cout << " ipt~ v1.1.0 (2026) "
-                << " by Nicolas Brochec, Joakim Borg, Marco Fiorini" << endl;
-            cout << " IRCAM, REPMUS REACH" << endl;
+            << "by Nicolas Brochec" << endl;
+            cout << " based on original work by Nicolas Brochec, Joakim Borg, and Marco Fiorini" << endl;
+            cout << " IRCAM, RepMus REACH team" << endl;
             return {};
         }
     };
