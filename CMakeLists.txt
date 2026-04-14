@@ -11,14 +11,26 @@ set(LIBTORCH_PYTHON_VERSION "3.12")
 set(LIBTORCH_URL "https://anaconda.org/pytorch/pytorch/2.4.1/download/osx-arm64/pytorch-2.4.1-py3.12_0.tar.bz2")
 
 # Use FetchContent to download and extract libtorch
-FetchContent_Declare(
+# FetchContent_Declare(
+#         libtorch
+#         URL ${LIBTORCH_URL}
+#         SOURCE_DIR ${LIBTORCH_DIR}  # Where the tar.bz2 will be extracted
+#         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+# )
+
+# FetchContent_MakeAvailable(libtorch)
+
+if(NOT EXISTS "${LIBTORCH_DIR}/lib")
+    FetchContent_Declare(
         libtorch
         URL ${LIBTORCH_URL}
-        SOURCE_DIR ${LIBTORCH_DIR}  # Where the tar.bz2 will be extracted
+        SOURCE_DIR ${LIBTORCH_DIR}
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-)
-
-FetchContent_MakeAvailable(libtorch)
+    )
+    FetchContent_MakeAvailable(libtorch)
+else()
+    message(STATUS "libtorch found locally at ${LIBTORCH_DIR}, skipping download")
+endif()
 
 list(APPEND CMAKE_PREFIX_PATH "${LIBTORCH_DIR}/lib/python${LIBTORCH_PYTHON_VERSION}/site-packages/torch/share/cmake")
 find_package(Torch REQUIRED)
