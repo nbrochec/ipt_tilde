@@ -59,7 +59,7 @@ If you are interested in this topic, please check out our other papers:
 ```bash
 git clone git@github.com:DYCI2/ipt_tilde.git --recurse-submodules
 cd ipt_tilde
-cmake -S . -B build DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target ipt_tilde -j 8 --verbose
 ```
 
@@ -67,7 +67,7 @@ cmake --build build --target ipt_tilde -j 8 --verbose
 ```bash
 git clone git@github.com:nbrochec/ipt_tilde.git --recurse-submodules
 cd ipt_tilde
-cmake -S . -B build DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target ipt_tilde -j 8 --verbose
 ```
 
