@@ -4,3 +4,7 @@
 [submodule "libs/r8brain/r8brain-free-src"]
 	path = libs/r8brain/r8brain-free-src
 	url = https://github.com/avaneev/r8brain-free-src
+[submodule "ipt_pipo/pipo-sdk"]
+	path = ipt_pipo/pipo-sdk
+	url = https://github.com/ircam-ismm/pipo-sdk.git
+	branch = develop
