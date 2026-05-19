@@ -44,7 +44,6 @@ add_subdirectory(libs/r8brain)
 add_subdirectory(src)
 add_subdirectory(app/ipt_example)
 
-
 # min-api config
 include(${CMAKE_SOURCE_DIR}/min-api/script/min-package.cmake)
 set(C74_MIN_API_DIR ${CMAKE_SOURCE_DIR}/min-api)
@@ -52,7 +51,7 @@ set(C74_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/externals)
 
 # min targets
 add_subdirectory(ipt_tilde)
-
+add_subdirectory(pipo.ipt)
 
 # Override settings from min-api for C++17 support
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum OS X deployment version" FORCE)
