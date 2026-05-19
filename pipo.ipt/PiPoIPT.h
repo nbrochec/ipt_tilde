@@ -77,7 +77,7 @@ public:
 	  out_labels[i] = classnames[i].c_str();
 
       // determine output stream parameters
-      double out_framerate = maxFrames / sr * 1000;
+      double out_framerate = sr / maxFrames;
       ret = propagateStreamAttributes(true, out_framerate, 0, numclasses, 1,
 					  out_labels, false, 0.001 / out_framerate, 1);
       delete [] out_labels;
