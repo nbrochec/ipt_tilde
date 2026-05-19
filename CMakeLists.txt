@@ -51,7 +51,6 @@ set(C74_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/externals)
 
 # min targets
 add_subdirectory(ipt_tilde)
-
 add_subdirectory(pipo.ipt)
 
 # Override settings from min-api for C++17 support

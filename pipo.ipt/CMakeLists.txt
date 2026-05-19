@@ -6,13 +6,17 @@ include_directories("${C74_INCLUDES}")
 include_directories("pipo-sdk/src")
 include_directories("pipo-sdk/bindings/max")
 include_directories("../max-sdk-base/max-includes")
+include_directories("../src")
 
 # SOURCE_FILES must be defined for min-object-unittest.cmake
 set(SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/pipo.ipt.cpp)
 
 # ${PROJECT_NAME} will here be name of current directory (thanks to min-pretarget.cmake)
-#set(PROJECT_NAME pipo.ipt)
 add_library(${PROJECT_NAME} MODULE ${SOURCE_FILES})
+
+target_link_libraries(${PROJECT_NAME}
+        PRIVATE
+        ipt)
 
 include(${C74_MIN_API_DIR}/script/min-posttarget.cmake)
 include(${C74_MIN_API_DIR}/test/min-object-unittest.cmake)
