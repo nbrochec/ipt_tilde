@@ -8,23 +8,23 @@ private:
   std::unique_ptr<IptClassifier> classifier_;
 
 public:
-  PiPoScalarAttr<const char *> modelname_attr_;
+  PiPoScalarAttr<const char *>    modelname_attr_;
   PiPoScalarAttr<PiPo::Enumerate> device_attr_;
-  PiPoScalarAttr<float>        sensitivity_attr_;
-  PiPoScalarAttr<float>        sensitivityrange_attr_;
-  PiPoScalarAttr<float>        threshold_attr_;
-  PiPoScalarAttr<float>        window_attr_;
-  PiPoScalarAttr<float>        confidence_attr_;
+  PiPoScalarAttr<float>           sensitivity_attr_;
+  PiPoScalarAttr<float>           sensitivityrange_attr_;
+  PiPoScalarAttr<float>           threshold_attr_;
+  PiPoScalarAttr<float>           window_attr_;
+  PiPoScalarAttr<float>           confidence_attr_;
 
   PiPoIPT (Parent *parent, PiPo *receiver = NULL)
   : PiPo(parent, receiver),
-  modelname_attr_	  (this, "model", "Absolute path to model.ts", true, ""),
-  device_attr_		  (this, "device", "Device type", true, 0),
-  sensitivity_attr_	  (this, "sensitivity", "", false, 0.5),
-  sensitivityrange_attr_(this, "sensitivityrange", "", false, 500),
-  threshold_attr_	  (this, "threshold", "", false, -80),
-  window_attr_	  (this, "window", "", false, 20),
-  confidence_attr_	  (this, "confidence", "", false, 0.2)
+  modelname_attr_	       (this, "model", "Absolute path to model.ts", true, ""),
+  device_attr_		       (this, "device", "Device type", true, 0),
+  sensitivity_attr_	     (this, "sensitivity", "Adjust the sensitivity of classification output", false, 0.5),
+  sensitivityrange_attr_ (this, "sensitivityrange", "Set the time window for sensitivity scaling", false, 500),
+  threshold_attr_	       (this, "threshold", "Set the energy threshold for classification", false, -80),
+  window_attr_	         (this, "window", "Set the sliding window size for energy thresholding", false, 20),
+  confidence_attr_	     (this, "confidence", "Set the minimum confidence threshold for classification output", false, 0.2)
   {
     device_attr_.addEnumItem("CPU",  "Use CPU");
     device_attr_.addEnumItem("CUDA", "NVIDIA GPU");
@@ -50,22 +50,22 @@ public:
     switch (device_attr_.get())
     {
       case 1: device = torch::kCUDA;    break;
-      case 2: device = torch::kMPS;	break;
-      default: device = torch::kCPU;     break;
+      case 2: device = torch::kMPS;	    break;
+      default: device = torch::kCPU;    break;
     }
 
     if (model_path  &&  model_path[0] != 0)
     {
       try {
-	classifier_ = std::make_unique<IptClassifier>(std::string(model_path), device);
-	classifier_->initialize_model();
-	classifier_->initialize_buffers(sr, maxFrames);
+        classifier_ = std::make_unique<IptClassifier>(std::string(model_path), device);
+        classifier_->initialize_model();
+        classifier_->initialize_buffers(sr, maxFrames); // intialize buffers with correct sample rate (resample if necessary) and frame size
       }
       catch (std::runtime_error& e)
       {
-	printf("ERROR %s\n", e.what());
-	signalError(e.what());
-	return PIPO_ERROR;
+        printf("ERROR %s\n", e.what());
+        signalError(e.what());
+        return PIPO_ERROR;
       }
       
       // query model output parameters
@@ -74,7 +74,7 @@ public:
 
       const char **out_labels = new const char *[numclasses];
       for (int i = 0; i < numclasses; i++)
-	  out_labels[i] = classnames[i].c_str();
+	    out_labels[i] = classnames[i].c_str();
 
       // determine output stream parameters
       double out_framerate = sr / maxFrames;
