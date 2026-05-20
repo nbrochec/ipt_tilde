@@ -6,6 +6,7 @@ class PiPoIPT : public PiPo
 {
 private:
   std::unique_ptr<IptClassifier> classifier_;
+  std::vector<double> inputbuf;
 
 public:
   PiPoScalarAttr<const char *> modelname_attr_;
@@ -60,6 +61,7 @@ public:
 	classifier_ = std::make_unique<IptClassifier>(std::string(model_path), device);
 	classifier_->initialize_model();
 	classifier_->initialize_buffers(sr, maxFrames);
+        inputbuf.reserve(maxFrames);
       }
       catch (std::runtime_error& e)
       {
@@ -86,12 +88,25 @@ public:
     return ret;
   }
 
-  int frames (double time, double weight, PiPoValue *values,
-              unsigned int size, unsigned int num)
+  int frames (double time, double weight, PiPoValue *values, unsigned int size, unsigned int num)
   {
+    int ret = PIPO_ERROR;
+
     if (classifier_)
     {
-      std::vector<double> inputbuf(values, values + num); // copy to required double vector
+      if (size == 1)
+        inputbuf.assign(values, values + num); // copy to required double vector
+      else // copy to required double vector and reduce to mono
+      {
+        inputbuf.assign(num, 0); // set to num zeros
+        for (int i = 0; i < num; i++)
+        {
+          for (int j = 0; j < size; j++)
+            inputbuf[i] += values[j];
+
+          values += size;
+        }
+      }
 
       std::optional<ClassificationResult> result;
       try {
@@ -99,21 +114,22 @@ public:
       }
       catch (std::runtime_error& e)
       {
-        printf("ERROR %s\n", e.what());
+        printf("pipo.ipt ERROR %s\n", e.what());
         signalError(e.what());
         return PIPO_ERROR;
       }
+
       if (result)
       {
         ClassificationResult res = *result;
         auto classprob = res.distribution;
-        return propagateFrames(time, 0, classprob.data(), classprob.size(), 1);
+        ret = propagateFrames(time, 0, classprob.data(), classprob.size(), 1);
       }
       else
-        return PIPO_OK;
+        ret = PIPO_OK;
     }
-    else
-      return PIPO_ERROR;
+
+    return ret;
   }
 };
 
