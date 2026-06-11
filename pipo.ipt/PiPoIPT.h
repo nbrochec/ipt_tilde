@@ -17,6 +17,7 @@ public:
   PiPoScalarAttr<float>           threshold_attr_;
   PiPoScalarAttr<float>           window_attr_;
   PiPoScalarAttr<float>           confidence_attr_;
+  PiPoScalarAttr<int>             period_attr_;
 
   PiPoIPT (Parent *parent, PiPo *receiver = NULL)
   : PiPo(parent, receiver),
@@ -26,7 +27,8 @@ public:
     sensitivityrange_attr_     (this, "sensitivityrange", "Set the time window for sensitivity scaling", false, 500),
     threshold_attr_            (this, "threshold", "Set the energy threshold for classification", false, -80),
     window_attr_               (this, "window", "Set the sliding window size for energy thresholding", false, 20),
-    confidence_attr_           (this, "confidence", "Set the minimum confidence threshold for classification output", false, 0.2)
+    confidence_attr_           (this, "confidence", "Set the minimum confidence threshold for classification output", false, 0.2),
+    period_attr_               (this, "period", "Set the processing period in ms", false, 0)
   {
     device_attr_.addEnumItem("CPU",  "Use CPU");
     device_attr_.addEnumItem("CUDA", "NVIDIA GPU");
