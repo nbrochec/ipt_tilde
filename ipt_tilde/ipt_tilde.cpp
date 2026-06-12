@@ -61,11 +61,18 @@ struct Docs {
 
 class ipt_tilde : public object<ipt_tilde>, public vector_operator<> {
 private:
+    // classification result stamped with its production time, so that batched
+    // results drained at once keep their real temporal spacing for smoothing
+    struct TimedResult {
+        ClassificationResult result;
+        std::chrono::time_point<std::chrono::steady_clock> time;
+    };
+
     std::unique_ptr<IptClassifier> m_classifier;
 
     std::thread m_processing_thread;
     c74::min::fifo<double> m_audio_fifo{16384};
-    c74::min::fifo<ClassificationResult> m_event_fifo{100};
+    c74::min::fifo<TimedResult> m_event_fifo{100};
 
 
     std::atomic<bool> m_running = false; // lifetime control of internal classification thread
@@ -136,12 +143,12 @@ public:
                     m_class_names = *m_classifier->get_class_names();
                 }
 
-                ClassificationResult result;
+                TimedResult timed;
                 std::vector<float> distribution;
                 bool has_result = false;
 
-                while (m_event_fifo.try_dequeue(result)) {
-                    distribution = m_integrator.process(result.distribution);
+                while (m_event_fifo.try_dequeue(timed)) {
+                    distribution = m_integrator.process(timed.result.distribution, timed.time);
                     has_result = true;
                 }
 
@@ -168,7 +175,7 @@ public:
                 }
 
                 atoms latency{"latency"};
-                latency.emplace_back(result.inference_latency_ms);
+                latency.emplace_back(timed.result.inference_latency_ms);
                 dumpout.send(latency);
 
                 return {};
@@ -406,7 +413,7 @@ private:
                     if (!buffered_audio.empty()) {
                         auto result = m_classifier->process(std::move(buffered_audio));
                         if (result) {
-                            m_event_fifo.try_enqueue(*result);
+                            m_event_fifo.try_enqueue({*result, std::chrono::steady_clock::now()});
 
                             if (period.get() == 0) {
                                 deliverer.delay(0.0);
