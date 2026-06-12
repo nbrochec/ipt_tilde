@@ -12,6 +12,12 @@ This object loads and runs TorchScript (`.ts`) classification models, enabling l
 
 👉 Train your own playing techniques recognition model in following instructions from the [ipt_recognition](http://github.com/nbrochec/ipt_recognition) repository.
 
+
+### ⬆ Upcoming updates
++ Development of a [PiPo](https://github.com/ircam-ismm/pipo) (Plugin Interface for Processing Objects) module for usage in [MuBu](https://ircam-ismm.github.io/max-msp/mubu.html) (Multimodal Analysis of Sound and Motion), by [diemoschwarz](https://github.com/diemoschwarz)
++ Development of a VAMP Plugin, by [pierreguillot](https://github.com/pierreguillot)
++ Addition of a robust trumpet model into the ipt~ Max Package
+
 ### ⚙️ Requirements
 
 + macOS 10.13 or later
@@ -20,7 +26,7 @@ This object loads and runs TorchScript (`.ts`) classification models, enabling l
 
 ### 💾 Installation
 
-+ Go to [Releases](https://github.com/DYCI2/ipt_tilde/releases) and download the latest version of ipt~ (`ipt_tilde_v1.1.0.pkg`)
++ Go to [Releases](https://github.com/DYCI2/ipt_tilde/releases) and download the latest version of ipt~ (`ipt_tilde_v1.1.1.pkg`)
 + Run the installer depending on your version of Max and follow the instructions
 + You're done!
 
@@ -45,6 +51,7 @@ If you use this work in your paper, please consider citing the following:
 ## 📚 Related Work
 
 If you are interested in this topic, please check out our other papers:
+- [Brochec et al. (2026)](https://hal.science/hal-05547946) - "Automatic Hybrid Following in Real-Time Mixed Music: A Case Study with Antescofo and ipt~ for Flute Playing Techniques"
 - [Brochec et al. (2025)](https://hal.science/hal-05061669) - "Interactive Music Co-Creation with an Instrumental Technique-Aware System: A Case Study with Flute and Somax2"
 - [Fiorini and Brochec (2024)](https://hal.science/hal-04635907) - "Guiding Co-Creative Musical Agents through Real-Time Flute Instrumental Playing Technique Recognition"
 - [Brochec et al. (2024)](https://hal.science/hal-04642673) - "Microphone-based Data Augmentation for Automatic Recognition of Instrumental Playing Techniques"
@@ -53,7 +60,6 @@ If you are interested in this topic, please check out our other papers:
 
 - In a terminal, run the following commands:
 
-**Clone from DYCI2 (main)**
 ```bash
 git clone git@github.com:DYCI2/ipt_tilde.git --recurse-submodules
 cd ipt_tilde
@@ -61,12 +67,10 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target ipt_tilde -j 8 --verbose
 ```
 
-**Clone from nbrochec (mirror)**
+- To build the PiPo module, add `pipo.ipt` to `--target` of previous command or run the following command:
+
 ```bash
-git clone git@github.com:nbrochec/ipt_tilde.git --recurse-submodules
-cd ipt_tilde
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target ipt_tilde -j 8 --verbose
+cmake --build build --target pipo.ipt -j 8 --verbose
 ```
 
 **Note:** The instructions above may trigger a CMake warning:  `static library kineto_LIBRARY-NOTFOUND not found.`  However, this does not appear to affect compilation or functionality.  Using the pre-compiled binaries from [PyTorch](https://pytorch.org/) will avoid this warning, but as of version 2.4.1, their CPU performance is approximately 20x slower compared to the Anaconda-provided binaries.
