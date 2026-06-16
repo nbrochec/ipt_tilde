@@ -95,11 +95,20 @@ private:
   std::unique_ptr<IptClassifier> classifier_;
   std::vector<double> inputbuf_;
 
+  // Batched inference: every block still produces one window (so results are
+  // identical to per-block classification), but windows are collected and run
+  // through the model in a single forward pass, which is far faster offline.
+  // Windows are flushed when MAX_BATCH accumulate, and the remainder in finalize().
+  static constexpr std::size_t MAX_BATCH = 128;
+  std::vector<std::vector<float>> batch_windows_;
+  std::vector<double>             batch_times_;   // frame time (ms) of each window
+  bool                            offline_ = false;  // batch only offline (mubu.process)
+
   // temporal smoothing of the class distribution (driven by sensitivity / sensitivityrange)
   LeakyIntegrator    integrator_;
   std::vector<float> pending_;            // latest smoothed distribution awaiting output
   bool               have_pending_ = false;
-  std::chrono::steady_clock::time_point last_output_;  // for @period output pacing
+  double             last_output_time_ = -1e18;  // frame time (ms) of last @period emit
 
   // last values pushed to the classifier/integrator, so we only re-apply on change
   float applied_threshold_   = NAN;
@@ -147,6 +156,7 @@ public:
   PiPoScalarAttr<float>           window_attr_;
   PiPoScalarAttr<float>           confidence_attr_;
   PiPoScalarAttr<float>           period_attr_;
+  PiPoScalarAttr<bool>            offline_attr_;
 
   PiPoIPT (Parent *parent, PiPo *receiver = NULL)
   : PiPo(parent, receiver),
@@ -157,7 +167,8 @@ public:
     threshold_attr_            (this, "threshold", "Set the energy threshold for classification", false, -80),
     window_attr_               (this, "window", "Set the sliding window size for energy thresholding", false, 20),
     confidence_attr_           (this, "confidence", "Set the minimum confidence threshold for classification output", false, 0.2),
-    period_attr_               (this, "period", "Set the processing period in ms", false, 0)
+    period_attr_               (this, "period", "Set the output period in ms (0 = output every inference)", false, 0),
+    offline_attr_              (this, "offline", "Batch inference for offline use like mubu.process (1), or classify per block in real-time (0)", true, false)
   {
     device_attr_.addEnumItem("CPU",  "Use CPU");
     device_attr_.addEnumItem("CUDA", "NVIDIA GPU");
@@ -174,6 +185,12 @@ public:
   {
     int ret = PIPO_ERROR;
     double sr = rate;
+
+    // Batch inference for offline use. Enable explicitly with @offline 1 (e.g. in
+    // mubu.process); otherwise auto-enable when the host sends time-tagged frames.
+    // In real-time (pipo~, @offline 0, no time tags) we classify per block to
+    // avoid the latency of waiting for a batch to fill.
+    offline_ = offline_attr_.get() || hasTimeTags;
 
     // load model: resolve relative names against the host's search path
     std::string resolved_path = ipt_resolve_model_path(modelname_attr_.getStr());
@@ -205,11 +222,15 @@ public:
         classifier_->initialize_buffers(sr, maxFrames);
         inputbuf_.reserve(maxFrames);
 
-        // reset smoothing + output-period state for the freshly loaded model,
-        // then push the current attribute values into the classifier / integrator
+        // reset smoothing, batching and output-period state for the freshly loaded
+        // model, then push the current attribute values into classifier / integrator
         integrator_   = LeakyIntegrator{};
         have_pending_ = false;
-        last_output_  = std::chrono::steady_clock::now();
+        last_output_time_ = -1e18;
+        batch_windows_.clear();
+        batch_times_.clear();
+        batch_windows_.reserve(MAX_BATCH);
+        batch_times_.reserve(MAX_BATCH);
         applied_threshold_ = applied_window_ = applied_sensitivity_ = applied_sensrange_ = NAN;
         sync_attributes();
       }
@@ -240,63 +261,99 @@ public:
 
   int frames (double time, double weight, PiPoValue *values, unsigned int size, unsigned int num)
   {
-    int ret = PIPO_ERROR;
+    if (!classifier_)
+      return PIPO_ERROR;
 
-    if (classifier_)
+    // reduce this block to mono
+    if (size == 1)
+      inputbuf_.assign(values, values + num);
+    else
     {
-      if (size == 1)
-        inputbuf_.assign(values, values + num); // copy to required double vector
-      else // copy to required double vector and reduce to mono
+      inputbuf_.assign(num, 0);
+      for (unsigned int i = 0; i < num; i++)
       {
-        inputbuf_.assign(num, 0); // set to num zeros
-        for (int i = 0; i < num; i++)
-        {
-          for (int j = 0; j < size; j++)
-            inputbuf_[i] += values[j];
+        for (unsigned int j = 0; j < size; j++)
+          inputbuf_[i] += values[j];
 
-          values += size;
-        }
-      }
-
-      std::optional<ClassificationResult> result;
-      try {
-        sync_attributes();   // apply any @threshold / @window / @sensitivity changes
-        result = classifier_->process(std::move(inputbuf_));
-      }
-      catch (const std::exception& e)  // catches c10::Error from torch as well as std::runtime_error
-      {
-        printf("pipo.ipt ERROR %s\n", e.what());
-        signalError(e.what());
-        return PIPO_ERROR;
-      }
-
-      if (result)
-      {
-        pending_      = integrator_.process(result->distribution);
-        have_pending_ = true;
-      }
-
-      // @period: 0 -> emit every frame we have data; >0 -> at most one emit per period (ms)
-      int  period_ms = static_cast<int>(period_attr_.get());
-      bool emit      = have_pending_;
-      auto now       = std::chrono::steady_clock::now();
-      if (emit && period_ms > 0)
-      {
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_output_).count();
-        emit = (elapsed >= period_ms);
-      }
-
-      // @confidence does not gate emission: pipo.ipt has a single outlet, so the
-      // smoothed distribution is always sent (ipt~'s no_confidence channel has no analogue).
-      ret = PIPO_OK;
-      if (emit)
-      {
-        last_output_  = now;
-        have_pending_ = false;
-        ret = propagateFrames(time, 0, pending_.data(), pending_.size(), 1);
+        values += size;
       }
     }
 
+    sync_attributes();   // apply any @threshold / @window / @sensitivity changes
+
+    // acquire the window this block would classify (energy gating happens here),
+    // but defer the model forward: collect windows and run them as one batch.
+    std::optional<std::vector<float>> window = classifier_->acquire_window(std::move(inputbuf_));
+    if (window)
+    {
+      batch_windows_.push_back(std::move(*window));
+      batch_times_.push_back(time);
+    }
+
+    // real-time: classify this block immediately (no batching, no added latency).
+    // offline: keep collecting until the batch is full, then flush one big batch.
+    if (!offline_  ||  batch_windows_.size() >= MAX_BATCH)
+      return flush_batch();
+
+    return PIPO_OK;
+  }
+
+  // Classify all pending windows in a single forward pass, then smooth and emit
+  // each result in order (so output is identical to per-block classification).
+  int flush_batch ()
+  {
+    if (batch_windows_.empty())
+      return PIPO_OK;
+
+    std::vector<ClassificationResult> results;
+    try {
+      results = classifier_->classify(batch_windows_);
+    }
+    catch (const std::exception& e)  // catches c10::Error from torch as well as std::runtime_error
+    {
+      printf("pipo.ipt ERROR %s\n", e.what());
+      signalError(e.what());
+      batch_windows_.clear();
+      batch_times_.clear();
+      return PIPO_ERROR;
+    }
+
+    int ret = PIPO_OK;
+    int period_ms = static_cast<int>(period_attr_.get());
+
+    for (std::size_t i = 0; i < results.size(); i++)
+    {
+      double t = batch_times_[i];
+
+      // feed the integrator the frame time (not wall-clock) so its time-aware
+      // smoothing keeps the real audio spacing even though we process in a burst
+      auto ts = std::chrono::steady_clock::time_point{}
+              + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                  std::chrono::duration<double, std::milli>(t));
+      pending_ = integrator_.process(results[i].distribution, ts);
+
+      // @period: 0 -> emit every inference; >0 -> at most one emit per period (ms),
+      // paced on frame time. @confidence does not gate (single outlet).
+      if (period_ms <= 0  ||  t - last_output_time_ >= period_ms)
+      {
+        last_output_time_ = t;
+        int r = propagateFrames(t, 0, pending_.data(), pending_.size(), 1);
+        if (r != PIPO_OK)
+          ret = r;
+      }
+    }
+
+    batch_windows_.clear();
+    batch_times_.clear();
     return ret;
+  }
+
+  // End of input: flush the windows still pending in the batch.
+  int finalize (double inputEnd)
+  {
+    int ret = flush_batch();
+    if (ret != PIPO_OK)
+      return ret;
+    return propagateFinalize(inputEnd);
   }
 };
