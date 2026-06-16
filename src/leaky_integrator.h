@@ -9,16 +9,20 @@
 class LeakyIntegrator {
 public:
     std::vector<float> process(const std::vector<float>& input) {
-        auto current_time = std::chrono::system_clock::now();
+        return process(input, std::chrono::steady_clock::now());
+    }
 
+    // timestamp of when the input was produced, so batched results keep their real spacing
+    std::vector<float> process(const std::vector<float>& input,
+                               std::chrono::time_point<std::chrono::steady_clock> current_time) {
         if (!m_last_callback || m_tau < 1e-6 || m_previous_value.size() != input.size()) {
             m_last_callback = current_time;
             m_previous_value = input;
             return input;
         }
 
-        auto elapsed_time = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                current_time - *m_last_callback).count());
+        auto elapsed_time = std::chrono::duration<double, std::milli>(
+                current_time - *m_last_callback).count();
 
         elapsed_time = std::min(m_tau, std::max(0.0, elapsed_time));
 
@@ -48,7 +52,7 @@ private:
     }
 
 
-    std::optional<std::chrono::time_point<std::chrono::system_clock>> m_last_callback;
+    std::optional<std::chrono::time_point<std::chrono::steady_clock>> m_last_callback;
     std::vector<float> m_previous_value;
 
     double m_tau = 0.0;
