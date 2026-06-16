@@ -6,6 +6,88 @@
 #include "utility.h"
 #include <chrono>
 #include <cmath>
+#include <string>
+#include <cstring>
+#include <unistd.h>
+
+// String attribute for file paths. The host splits a message like
+//   ipt.model /Users/me/Max 9/model.ts
+// into separate atoms at every space and feeds them one by one, so a plain
+// string scalar would only keep "/Users/me/Max". This re-joins all atoms with
+// spaces and normalizes the result so spaced paths load correctly.
+class PiPoPathAttr : public PiPoScalarAttr<const char *>
+{
+public:
+  PiPoPathAttr (PiPo *pipo, const char *name, const char *descr, bool changesStream,
+                const char *initVal = "")
+  : PiPoScalarAttr<const char *>(pipo, name, descr, changesStream, initVal)
+  {
+    if (initVal) path_ = initVal;
+  }
+
+  void set (unsigned int i, const char *val, bool silently = false) override
+  {
+    if (val == NULL) val = "";
+    if (i == 0)
+      path_ = val;
+    else
+    {
+      path_ += ' ';
+      path_ += val;
+    }
+    normalize_path();
+    this->changed(silently);
+  }
+
+  void clone (Attr *other) override
+  {
+    if (auto *o = dynamic_cast<PiPoPathAttr *>(other))
+      path_ = o->path_;
+  }
+
+  const char *get (void)                      { return path_.c_str(); }
+  const char *getStr (unsigned int i = 0) override { return path_.c_str(); }
+  PiPo::Atom  getAtom (unsigned int i) override    { return PiPo::Atom(path_.c_str()); }
+
+private:
+  // Make the path robust to how it arrives from the patch:
+  //  - non-breaking spaces (U+00A0 == bytes C2 A0) -> regular space
+  //  - trim leading/trailing whitespace and quote characters (Max treats '
+  //    as a literal, so paths can arrive wrapped in ' or " — any number of them)
+  void normalize_path ()
+  {
+    std::string s;
+    s.reserve(path_.size());
+    for (std::size_t i = 0; i < path_.size(); ++i)
+    {
+      if (i + 1 < path_.size()
+          && static_cast<unsigned char>(path_[i])     == 0xC2
+          && static_cast<unsigned char>(path_[i + 1]) == 0xA0)
+      {
+        s += ' ';
+        ++i;
+      }
+      else
+        s += path_[i];
+    }
+    path_.swap(s);
+
+    const char *trimset = " \t\r\n\"'";
+    auto a = path_.find_first_not_of(trimset);
+    if (a == std::string::npos) { path_.clear(); return; }
+    auto z = path_.find_last_not_of(trimset);
+    path_ = path_.substr(a, z - a + 1);
+  }
+
+  std::string path_;
+};
+
+// Implemented by the host wrapper (pipo.ipt.cpp), where the Max SDK is available.
+// Resolves a possibly-relative model filename against Max's search path:
+//   - returns an absolute path if the file is found in the search path,
+//   - returns the input unchanged if it is already readable (absolute/cwd-relative),
+//   - returns empty for empty input.
+std::string ipt_resolve_model_path (const char *name);
 
 class PiPoIPT : public PiPo
 {
@@ -57,7 +139,7 @@ private:
   }
 
 public:
-  PiPoScalarAttr<const char *>    modelname_attr_;
+  PiPoPathAttr                    modelname_attr_;
   PiPoScalarAttr<PiPo::Enumerate> device_attr_;
   PiPoScalarAttr<float>           sensitivity_attr_;
   PiPoScalarAttr<float>           sensitivityrange_attr_;
@@ -93,9 +175,9 @@ public:
     int ret = PIPO_ERROR;
     double sr = rate;
 
-    // load model
-    const char *model_path = modelname_attr_.getStr();
-    printf("modelname %s, sr %f\n", model_path, sr);
+    // load model: resolve relative names against the host's search path
+    std::string resolved_path = ipt_resolve_model_path(modelname_attr_.getStr());
+    const char *model_path = resolved_path.c_str();
 
     auto device = torch::kCPU;
     switch (device_attr_.get())
@@ -107,6 +189,16 @@ public:
 
     if (model_path  &&  model_path[0] != 0)
     {
+      // pre-flight: report a clear error if the path is not readable, instead
+      // of letting torch throw a cryptic fopen errno 2
+      if (access(model_path, R_OK) != 0)
+      {
+        std::string msg = "cannot read model file: ";
+        msg += model_path;
+        signalError(msg.c_str());
+        return PIPO_ERROR;
+      }
+
       try {
         classifier_ = std::make_unique<IptClassifier>(std::string(model_path), device);
         classifier_->initialize_model();
@@ -178,42 +270,51 @@ public:
         return PIPO_ERROR;
       }
 
+      // Always process through integrator if we have a result
+      // This ensures temporal smoothing (LeakyIntegrator) is always applied
       if (result)
       {
-        // temporal smoothing: sensitivity / sensitivityrange set the integrator's tau
-        pending_      = integrator_.process(result->distribution);
+        pending_ = integrator_.process(result->distribution);
         have_pending_ = true;
       }
 
-      // @period: 0 -> output every inference; >0 -> one smoothed output per period (ms)
-      bool emit = false;
-      int  period_ms = static_cast<int>(period_attr_.get());
+      // @period: controls how often we emit the output distribution
+      // When period > 0, emission is gated - only emit when period has elapsed
+      // When period == 0, emit every frame we have pending data
+      bool should_emit = false;
+      int period_ms = static_cast<int>(period_attr_.get());
+      
       if (period_ms <= 0)
-        emit = have_pending_;
+      {
+        // Period disabled: emit every frame we have data
+        should_emit = have_pending_;
+      }
       else
       {
+        // Period enabled: only emit when period has elapsed AND we have pending data
         auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_output_).count();
-        if (elapsed >= period_ms)
-        {
-          emit = have_pending_;
-          last_output_ = now;
-        }
+        should_emit = (elapsed >= period_ms && have_pending_);
       }
 
-      if (emit)
+      // @confidence: in the original ipt_tilde, confidence does NOT gate emission
+      // It always emits the distribution, but sends -1 and "no_confidence" on other outlets
+      // Since pipo.ipt only has one output (the distribution), we always emit it
+      // regardless of confidence level, matching the original behavior
+      if (should_emit && have_pending_)
       {
+        last_output_ = std::chrono::steady_clock::now();
         have_pending_ = false;
-        // @confidence: only output when the top class is confident enough,
-        // otherwise suppress this block's output (single-outlet analogue of "no_confidence")
-        std::size_t idx = util::argmax(pending_);
-        if (pending_[idx] >= confidence_attr_.get())
-          ret = propagateFrames(time, 0, pending_.data(), pending_.size(), 1);
-        else
-          ret = PIPO_OK;
+        
+        // Always emit the smoothed distribution from LeakyIntegrator
+        // (matching original ipt_tilde behavior where distribution is always sent)
+        ret = propagateFrames(time, 0, pending_.data(), pending_.size(), 1);
       }
       else
+      {
+        // Should not emit: either period not elapsed or no pending data
         ret = PIPO_OK;
+      }
     }
 
     return ret;
