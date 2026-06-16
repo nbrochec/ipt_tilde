@@ -102,6 +102,50 @@ public:
     }
 
 
+    /** Offline batched path: same windowing and energy gating as process(), 
+     *  but returns the window to classify instead of running the model, 
+     *  so the caller can collect windows and classify() them all in a single forward pass.
+     *  @returns the resampled window (get_segment_length() floats) or nullopt */
+    std::optional<std::vector<float>> acquire_window(std::vector<double>&& input) {
+        std::lock_guard lock{m_mutex};
+
+        if (!m_initialized) {
+            return std::nullopt;
+        }
+
+        m_threshold_buffer->add_samples(input);
+        m_classification_buffer->add_samples(input);
+
+        if (!m_classification_buffer->is_fully_allocated()) {
+            return std::nullopt;
+        }
+
+        if (m_active) {
+            auto samples = m_classification_buffer->get_samples();
+            if (m_energy_threshold.is_above_threshold(samples)) {
+                return util::to_floats(samples);
+            }
+            m_active = false;
+        } else if (m_energy_threshold.is_above_threshold(m_threshold_buffer->samples_unordered())) {
+            m_active = true;
+            return util::to_floats(m_classification_buffer->get_samples());
+        }
+
+        return std::nullopt;
+    }
+
+
+    /** Batched classification of windows from acquire_window(), in one forward pass.
+     *  @throws c10::Error if classification fails */
+    std::vector<ClassificationResult> classify(const std::vector<std::vector<float>>& windows) {
+        std::lock_guard lock{m_mutex};
+        if (!m_model || windows.empty()) {
+            return {};
+        }
+        return m_model->classify(windows);
+    }
+
+
     void set_energy_threshold(double threshold_db) {
         std::lock_guard lock{m_mutex};
         m_energy_threshold.set_threshold_db(threshold_db);
