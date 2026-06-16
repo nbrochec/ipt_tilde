@@ -62,6 +62,53 @@ public:
     }
 
 
+    /** Classify several windows in a single forward pass.
+     *  @param windows each must be exactly get_segment_length() samples long
+     *  @returns one ClassificationResult per window, in the same order
+     *  @throws c10::Error if classification fails */
+    std::vector<ClassificationResult> classify(const std::vector<std::vector<float>>& windows) {
+        if (windows.empty()) {
+            return {};
+        }
+
+        const long batch = static_cast<long>(windows.size());
+        const long length = static_cast<long>(windows.front().size());
+
+        // pack the windows contiguously into a [batch, 1, length] tensor
+        std::vector<float> flat;
+        flat.reserve(static_cast<std::size_t>(batch) * static_cast<std::size_t>(length));
+        for (const auto& w: windows) {
+            flat.insert(flat.end(), w.begin(), w.end());
+        }
+
+        auto tensor_in = torch::from_blob(flat.data(), {batch, 1, length}, torch::kFloat32).to(m_device);
+        std::vector<torch::jit::IValue> inputs = {tensor_in};
+
+        auto t1 = std::chrono::high_resolution_clock::now();
+        auto tensor_out = m_model.get_method("forward")(inputs).toTensor();
+        auto t2 = std::chrono::high_resolution_clock::now();
+
+        tensor_out = torch::softmax(tensor_out, /*dim=*/-1).to(torch::kCPU).contiguous();
+
+        const long num_classes = tensor_out.size(-1);
+        const float* out_ptr = tensor_out.data_ptr<float>();
+
+        // share the (single) forward-pass cost evenly across the batch
+        auto latency_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t2 - t1).count();
+        double latency_per_window = static_cast<double>(latency_ns) / 1e6 / static_cast<double>(batch);
+
+        std::vector<ClassificationResult> results;
+        results.reserve(static_cast<std::size_t>(batch));
+        for (long b = 0; b < batch; ++b) {
+            const float* row = out_ptr + b * num_classes;
+            results.push_back(ClassificationResult{std::vector<float>(row, row + num_classes),
+                                                   latency_per_window});
+        }
+
+        return results;
+    }
+
+
     const std::vector<std::string>& get_class_names() const {
         return m_class_names;
     }
