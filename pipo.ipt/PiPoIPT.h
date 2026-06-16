@@ -2,12 +2,59 @@
 
 #include "PiPo.h"
 #include "ipt_classifier.h"
+#include "leaky_integrator.h"
+#include "utility.h"
+#include <chrono>
+#include <cmath>
 
 class PiPoIPT : public PiPo
 {
 private:
   std::unique_ptr<IptClassifier> classifier_;
   std::vector<double> inputbuf_;
+
+  // temporal smoothing of the class distribution (driven by sensitivity / sensitivityrange)
+  LeakyIntegrator    integrator_;
+  std::vector<float> pending_;            // latest smoothed distribution awaiting output
+  bool               have_pending_ = false;
+  std::chrono::steady_clock::time_point last_output_;  // for @period output pacing
+
+  // last values pushed to the classifier/integrator, so we only re-apply on change
+  float applied_threshold_   = NAN;
+  float applied_window_      = NAN;
+  float applied_sensitivity_ = NAN;
+  float applied_sensrange_   = NAN;
+
+  // Push current attribute values into the classifier / integrator.
+  // Cheap: only calls a setter when the value actually changed since the last sync.
+  void sync_attributes ()
+  {
+    float threshold = threshold_attr_.get();
+    if (threshold != applied_threshold_)
+    {
+      classifier_->set_energy_threshold(threshold);
+      applied_threshold_ = threshold;
+    }
+
+    float window = window_attr_.get();
+    if (window != applied_window_)
+    {
+      classifier_->set_threshold_window(static_cast<int>(window));
+      applied_window_ = window;
+    }
+
+    float sensitivity = sensitivity_attr_.get();
+    float sensrange   = sensitivityrange_attr_.get();
+    if (sensitivity != applied_sensitivity_  ||  sensrange != applied_sensrange_)
+    {
+      // sensitivity 1 -> tau 0 (no smoothing, most reactive); lower sensitivity -> more smoothing
+      double tau = (1.0 - util::clamp(static_cast<double>(sensitivity), 0.0, 1.0))
+                 * static_cast<double>(sensrange);
+      integrator_.set_tau(tau);
+      applied_sensitivity_ = sensitivity;
+      applied_sensrange_   = sensrange;
+    }
+  }
 
 public:
   PiPoScalarAttr<const char *>    modelname_attr_;
@@ -17,7 +64,7 @@ public:
   PiPoScalarAttr<float>           threshold_attr_;
   PiPoScalarAttr<float>           window_attr_;
   PiPoScalarAttr<float>           confidence_attr_;
-  PiPoScalarAttr<int>             period_attr_;
+  PiPoScalarAttr<float>           period_attr_;
 
   PiPoIPT (Parent *parent, PiPo *receiver = NULL)
   : PiPo(parent, receiver),
@@ -65,14 +112,22 @@ public:
         classifier_->initialize_model();
         classifier_->initialize_buffers(sr, maxFrames);
         inputbuf_.reserve(maxFrames);
+
+        // reset smoothing + output-period state for the freshly loaded model,
+        // then push the current attribute values into the classifier / integrator
+        integrator_   = LeakyIntegrator{};
+        have_pending_ = false;
+        last_output_  = std::chrono::steady_clock::now();
+        applied_threshold_ = applied_window_ = applied_sensitivity_ = applied_sensrange_ = NAN;
+        sync_attributes();
       }
-      catch (std::runtime_error& e)
+      catch (const std::exception& e)  // catches c10::Error from torch as well as std::runtime_error
       {
         printf("ERROR %s\n", e.what());
         signalError(e.what());
         return PIPO_ERROR;
       }
-      
+
       // query model output parameters
       std::vector<std::string> classnames = *classifier_->get_class_names();
       int numclasses = classnames.size();
@@ -113,9 +168,10 @@ public:
 
       std::optional<ClassificationResult> result;
       try {
+        sync_attributes();   // apply any @threshold / @window / @sensitivity changes
         result = classifier_->process(std::move(inputbuf_));
       }
-      catch (std::runtime_error& e)
+      catch (const std::exception& e)  // catches c10::Error from torch as well as std::runtime_error
       {
         printf("pipo.ipt ERROR %s\n", e.what());
         signalError(e.what());
@@ -124,9 +180,37 @@ public:
 
       if (result)
       {
-        ClassificationResult res = *result;
-        auto classprob = res.distribution;
-        ret = propagateFrames(time, 0, classprob.data(), classprob.size(), 1);
+        // temporal smoothing: sensitivity / sensitivityrange set the integrator's tau
+        pending_      = integrator_.process(result->distribution);
+        have_pending_ = true;
+      }
+
+      // @period: 0 -> output every inference; >0 -> one smoothed output per period (ms)
+      bool emit = false;
+      int  period_ms = static_cast<int>(period_attr_.get());
+      if (period_ms <= 0)
+        emit = have_pending_;
+      else
+      {
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_output_).count();
+        if (elapsed >= period_ms)
+        {
+          emit = have_pending_;
+          last_output_ = now;
+        }
+      }
+
+      if (emit)
+      {
+        have_pending_ = false;
+        // @confidence: only output when the top class is confident enough,
+        // otherwise suppress this block's output (single-outlet analogue of "no_confidence")
+        std::size_t idx = util::argmax(pending_);
+        if (pending_[idx] >= confidence_attr_.get())
+          ret = propagateFrames(time, 0, pending_.data(), pending_.size(), 1);
+        else
+          ret = PIPO_OK;
       }
       else
         ret = PIPO_OK;
