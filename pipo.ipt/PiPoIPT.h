@@ -270,50 +270,30 @@ public:
         return PIPO_ERROR;
       }
 
-      // Always process through integrator if we have a result
-      // This ensures temporal smoothing (LeakyIntegrator) is always applied
       if (result)
       {
-        pending_ = integrator_.process(result->distribution);
+        pending_      = integrator_.process(result->distribution);
         have_pending_ = true;
       }
 
-      // @period: controls how often we emit the output distribution
-      // When period > 0, emission is gated - only emit when period has elapsed
-      // When period == 0, emit every frame we have pending data
-      bool should_emit = false;
-      int period_ms = static_cast<int>(period_attr_.get());
-      
-      if (period_ms <= 0)
+      // @period: 0 -> emit every frame we have data; >0 -> at most one emit per period (ms)
+      int  period_ms = static_cast<int>(period_attr_.get());
+      bool emit      = have_pending_;
+      auto now       = std::chrono::steady_clock::now();
+      if (emit && period_ms > 0)
       {
-        // Period disabled: emit every frame we have data
-        should_emit = have_pending_;
-      }
-      else
-      {
-        // Period enabled: only emit when period has elapsed AND we have pending data
-        auto now = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_output_).count();
-        should_emit = (elapsed >= period_ms && have_pending_);
+        emit = (elapsed >= period_ms);
       }
 
-      // @confidence: in the original ipt_tilde, confidence does NOT gate emission
-      // It always emits the distribution, but sends -1 and "no_confidence" on other outlets
-      // Since pipo.ipt only has one output (the distribution), we always emit it
-      // regardless of confidence level, matching the original behavior
-      if (should_emit && have_pending_)
+      // @confidence does not gate emission: pipo.ipt has a single outlet, so the
+      // smoothed distribution is always sent (ipt~'s no_confidence channel has no analogue).
+      ret = PIPO_OK;
+      if (emit)
       {
-        last_output_ = std::chrono::steady_clock::now();
+        last_output_  = now;
         have_pending_ = false;
-        
-        // Always emit the smoothed distribution from LeakyIntegrator
-        // (matching original ipt_tilde behavior where distribution is always sent)
         ret = propagateFrames(time, 0, pending_.data(), pending_.size(), 1);
-      }
-      else
-      {
-        // Should not emit: either period not elapsed or no pending data
-        ret = PIPO_OK;
       }
     }
 
