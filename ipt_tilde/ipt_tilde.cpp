@@ -16,6 +16,7 @@ struct Docs {
     static const inline title THRESHOLD_TITLE = "Threshold";
     static const inline title WINDOW_TITLE = "Window";
     static const inline title CONFIDENCE_TITLE = "Confidence";
+    static const inline title PERIOD_TITLE = "Period";
 
     static const inline description VERBOSE_DESCRIPTION = "Enable or disable verbose logging."
                                                           " When set to @verbose @1, the object provides detailed"
@@ -47,17 +48,31 @@ struct Docs {
                                                             " Use a @float between @0. and @1. When the highest probability"
                                                             " is below this threshold, outputs 'no_confidence' instead of"
                                                             " the predicted class name.";
+    static const inline description PERIOD_DESCRIPTION = "Set the output period in milliseconds."
+                                                            " Use an @int of @0 or greater. When set to @0, each inference"
+                                                            " result is output immediately (default). When set to a value"
+                                                            " greater than @0, inference runs continuously and all results"
+                                                            " within each period are accumulated by the leaky integrator"
+                                                            " before a single smoothed output is sent. Longer periods"
+                                                            " produce more smoothing.";
 
 };
 
 
 class ipt_tilde : public object<ipt_tilde>, public vector_operator<> {
 private:
+    // classification result stamped with its production time, so that batched
+    // results drained at once keep their real temporal spacing for smoothing
+    struct TimedResult {
+        ClassificationResult result;
+        std::chrono::time_point<std::chrono::steady_clock> time;
+    };
+
     std::unique_ptr<IptClassifier> m_classifier;
 
     std::thread m_processing_thread;
     c74::min::fifo<double> m_audio_fifo{16384};
-    c74::min::fifo<ClassificationResult> m_event_fifo{100};
+    c74::min::fifo<TimedResult> m_event_fifo{100};
 
 
     std::atomic<bool> m_running = false; // lifetime control of internal classification thread
@@ -110,7 +125,7 @@ public:
     message<> maxclass_setup{
         this, "maxclass_setup",
         [this](const c74::min::atoms &args, const int inlet) -> c74::min::atoms {
-            cout << " ipt~ v1.1.1 (2026) "
+            cout << " ipt~ v1.1.0 (2026) "
             << "by Nicolas Brochec" << endl;
             cout << " based on original work by Nicolas Brochec, Joakim Borg, and Marco Fiorini" << endl;
             cout << " IRCAM, RepMus REACH team" << endl;
@@ -121,47 +136,48 @@ public:
 
     timer<> deliverer{
             this, MIN_FUNCTION {
-                ClassificationResult result;
-                while (m_event_fifo.try_dequeue(result)) {
-                    // If there are events in the event fifo, it means that the main loop is running and
-                    // that the model therefore is initialized, so these assertions should never be hit
-                    assert(m_model_initialized);
-                    assert(m_classifier);
+                assert(m_model_initialized);
+                assert(m_classifier);
 
-                    if (!m_class_names) {
-                        m_class_names = *m_classifier->get_class_names();
-                    }
-
-
-                    auto distribution = m_integrator.process(result.distribution);
-
-                    atoms distribution_atms;
-
-                    for (const auto& v: distribution) {
-                        distribution_atms.emplace_back(v);
-                    }
-
-                    auto index = static_cast<long>(util::argmax(distribution));
-                    auto max_confidence = distribution[static_cast<std::size_t>(index)];
-
-                    if (max_confidence >= confidence.get()) {
-                        outlet_main.send(index);
-                        outlet_classname.send(m_class_names->at(static_cast<std::size_t>(index)));
-                        outlet_distribution.send(distribution_atms);
-                    } else {
-                        outlet_main.send(-1);
-                        outlet_classname.send("no_confidence");
-                        outlet_distribution.send(distribution_atms);
-                    }
-                    
-//                    outlet_main.send(index);
-//                    outlet_classname.send(m_class_names->at(static_cast<std::size_t>(index)));
-//                    outlet_distribution.send(distribution_atms);
-
-                    atoms latency{"latency"};
-                    latency.emplace_back(result.inference_latency_ms);
-                    dumpout.send(latency);
+                if (!m_class_names) {
+                    m_class_names = *m_classifier->get_class_names();
                 }
+
+                TimedResult timed;
+                std::vector<float> distribution;
+                bool has_result = false;
+
+                while (m_event_fifo.try_dequeue(timed)) {
+                    distribution = m_integrator.process(timed.result.distribution, timed.time);
+                    has_result = true;
+                }
+
+                if (!has_result) {
+                    return {};
+                }
+
+                atoms distribution_atms;
+                for (const auto& v: distribution) {
+                    distribution_atms.emplace_back(v);
+                }
+
+                auto index = static_cast<long>(util::argmax(distribution));
+                auto max_confidence = distribution[static_cast<std::size_t>(index)];
+
+                if (max_confidence >= confidence.get()) {
+                    outlet_main.send(index);
+                    outlet_classname.send(m_class_names->at(static_cast<std::size_t>(index)));
+                    outlet_distribution.send(distribution_atms);
+                } else {
+                    outlet_main.send(-1);
+                    outlet_classname.send("no_confidence");
+                    outlet_distribution.send(distribution_atms);
+                }
+
+                atoms latency{"latency"};
+                latency.emplace_back(timed.result.inference_latency_ms);
+                dumpout.send(latency);
+
                 return {};
             }
     };
@@ -287,6 +303,21 @@ public:
     }
     };
 
+
+    attribute<int> period{this, "period", 0, Docs::PERIOD_TITLE, Docs::PERIOD_DESCRIPTION, setter{
+            MIN_FUNCTION {
+                if (args.size() == 1 && (args[0].type() == c74::min::message_type::int_argument
+                                          || args[0].type() == c74::min::message_type::float_argument)) {
+                    auto ms = std::max(0, static_cast<int>(args[0]));
+                    return {ms};
+                }
+
+                cerr << "bad argument for message \"period\"" << endl;
+                return period;
+            }
+    }
+    };
+
     message<> classnames{this, "classnames", Docs::CLASS_NAMES_DESCRIPTION, setter{MIN_FUNCTION {
         if (inlet != 0) {
             cerr << "invalid message \"classnames\" for inlet " << inlet << endl;
@@ -369,6 +400,8 @@ private:
         m_model_initialized = true; // true independently of success
 
         try {
+            auto last_output = std::chrono::steady_clock::now();
+
             while (m_running) {
                 if (m_enabled) {
                     std::vector<double> buffered_audio;
@@ -380,9 +413,21 @@ private:
                     if (!buffered_audio.empty()) {
                         auto result = m_classifier->process(std::move(buffered_audio));
                         if (result) {
-                            m_event_fifo.try_enqueue(*result);
-                            deliverer.delay(0.0);
+                            m_event_fifo.try_enqueue({*result, std::chrono::steady_clock::now()});
+
+                            if (period.get() == 0) {
+                                deliverer.delay(0.0);
+                            }
                         }
+                    }
+                }
+
+                if (period.get() > 0) {
+                    auto now = std::chrono::steady_clock::now();
+                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_output).count();
+                    if (elapsed >= period.get()) {
+                        deliverer.delay(0.0);
+                        last_output = now;
                     }
                 }
 
