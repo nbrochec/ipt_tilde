@@ -12,11 +12,15 @@ This object loads and runs TorchScript (`.ts`) classification models, enabling l
 
 👉 Train your own playing techniques recognition model in following instructions from the [ipt_recognition](http://github.com/nbrochec/ipt_recognition) repository.
 
+👉 Use ipt~ in your project using the self-contained bundle from the C API: [libipt](https://github.com/nbrochec/libipt)
+
+### 💡 NEW v1.2.0
++ New attributes: `@period` allows you to throttle the output of ipt~ while keeping leaky integrator smoothing
++ Addition of a trumpet model into the ipt~ Max Package
++ [PiPo](https://github.com/ircam-ismm/pipo) (Plugin Interface for Processing Objects) module for usage in [MuBu](https://ircam-ismm.github.io/max-msp/mubu.html) (Multimodal Analysis of Sound and Motion), developed with [diemoschwarz](https://github.com/diemoschwarz)
 
 ### ⬆ Upcoming updates
-+ Development of a [PiPo](https://github.com/ircam-ismm/pipo) (Plugin Interface for Processing Objects) module for usage in [MuBu](https://ircam-ismm.github.io/max-msp/mubu.html) (Multimodal Analysis of Sound and Motion), by [diemoschwarz](https://github.com/diemoschwarz)
-+ Development of a VAMP Plugin, by [pierreguillot](https://github.com/pierreguillot)
-+ Addition of a robust trumpet model into the ipt~ Max Package
++ Development of a VAMP Plugin, with [pierreguillot](https://github.com/pierreguillot)
 
 ### ⚙️ Requirements
 
@@ -26,19 +30,27 @@ This object loads and runs TorchScript (`.ts`) classification models, enabling l
 
 ### 💾 Installation
 
-+ Go to [Releases](https://github.com/DYCI2/ipt_tilde/releases) and download the latest version of ipt~ (`ipt_tilde_v1.1.1.pkg`)
++ Go to [Releases](https://github.com/DYCI2/ipt_tilde/releases) and download the latest version of ipt~
 + Run the installer depending on your version of Max and follow the instructions
-+ You're done!
 
-### 🎥 Demo Video
-A demonstration video of ipt~ detecting in real-time Instrumental Playing Techniques from the EG-IPT dataset is available [here](https://youtu.be/PFiWNnOd-vg).
+### 🎥 Video & Tutorials
++ [ipt~ recognizing from various instrument](https://reachcloud.ircam.fr/index.php/s/TEsMcZccaYHBYTr)
++ [Getting started](https://reachcloud.ircam.fr/index.php/s/gSSGoLfQDYBEent)
++ [How to train your own models](https://reachcloud.ircam.fr/index.php/s/wBbKaSmLs74MAQc)
 
 ## 🧠 About
 
 This project is part of an ongoing research effort into the real-time recognition of instrumental playing techniques for interactive music systems.
-If you use this work in your paper, please consider citing the following:
+If you use this work in your paper, please consider citing the followings:
 
 ```bibtex
+@phdthesis{brochec:tel-05503298,
+  TITLE = {{Advancing Human-Computer Interaction in Mixed Music: A Deep Learning Approach to Real-Time Instrumental Playing Technique Recognition}},
+  AUTHOR = {Brochec, Nicolas},
+  SCHOOL = {{Tokyo University of the Arts}},
+  YEAR = {2026},
+}
+
 @inproceedings{fiorini2025egipt,
   title={Introducing EG-IPT and ipt~: a novel electric guitar dataset and a new Max/MSP object for real-time classification of instrumental playing techniques},
   author={Fiorini, Marco and Brochec, Nicolas and Borg, Joakim and Pasini, Riccardo},
