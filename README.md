@@ -100,4 +100,4 @@ Funding support for this work was provided by a Japanese Ministry of Education, 
 
 ## 📇 Contact
 
-Please write to `nicolas.brochec@ircam.fr` for any questions, or to share with us project made with ipt~ 
+Please write to `nicolas.brochec[at]ircam.fr` for any questions, or to share with us project made with ipt~ 
