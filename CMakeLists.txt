@@ -2,6 +2,10 @@ cmake_minimum_required(VERSION 3.19)
 set(CMAKE_CXX_STANDARD 17)
 project(ipt_max VERSION 0.0.1)
 
+# Register tests at the top level so `ctest --test-dir build` discovers the
+# min-object unit tests defined in subdirectories (e.g. ipt_tilde_test).
+enable_testing()
+
 # Universal binaries are not possible with torch; libipt is arm64-only.
 set(CMAKE_OSX_ARCHITECTURES arm64)
 
