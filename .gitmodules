@@ -8,4 +8,4 @@
 [submodule "libipt"]
 	path = libipt
 	url = https://github.com/nbrochec/libipt.git
-	branch = dev
+	branch = main
