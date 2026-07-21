@@ -1,10 +1,11 @@
 [submodule "min-api"]
 	path = min-api
 	url = https://github.com/Cycling74/min-api.git
-[submodule "libs/r8brain/r8brain-free-src"]
-	path = libs/r8brain/r8brain-free-src
-	url = https://github.com/avaneev/r8brain-free-src
 [submodule "pipo.ipt/pipo-sdk"]
 	path = pipo.ipt/pipo-sdk
 	url = https://github.com/ircam-ismm/pipo-sdk.git
 	branch = develop
+[submodule "libipt"]
+	path = libipt
+	url = https://github.com/nbrochec/libipt.git
+	branch = dev

@@ -1,12 +1,26 @@
 #include "c74_min.h"
-#include <torch/script.h>
 #include <chrono>
+#include <algorithm>
+#include <cctype>
 
-#include "ipt_classifier.h"
-#include "leaky_integrator.h"
-#include "utility.h"
+#include "ipt.h"
 
 using namespace c74::min;
+
+// Local replacements for the former util::/IptClassifier constants and helpers,
+// which lived in the embedded core now owned by libipt (behind the C ABI).
+namespace {
+    constexpr double DEFAULT_MINIMUM_THRESHOLD    = -80.0;  // was EnergyThreshold::MINIMUM_THRESHOLD
+    constexpr int    DEFAULT_THRESHOLD_WINDOW_MS  = 20;     // was IptClassifier::DEFAULT_THRESHOLD_WINDOW_MS
+
+    std::size_t argmax(const std::vector<float>& v) {
+        std::size_t index = 0;
+        for (std::size_t i = 1; i < v.size(); ++i) {
+            if (v[i] > v[index]) index = i;
+        }
+        return index;
+    }
+} // namespace
 
 struct Docs {
     static const inline title VERBOSE_TITLE = "Verbose";
@@ -61,14 +75,16 @@ struct Docs {
 
 class ipt_tilde : public object<ipt_tilde>, public vector_operator<> {
 private:
-    // classification result stamped with its production time, so that batched
-    // results drained at once keep their real temporal spacing for smoothing
+    // raw classification result stamped with its production time (steady-clock
+    // ms), so that results drained together keep their real temporal spacing when
+    // smoothed by ipt_smooth() on the main thread.
     struct TimedResult {
-        ClassificationResult result;
-        std::chrono::time_point<std::chrono::steady_clock> time;
+        std::vector<float> distribution;   // raw (unsmoothed) distribution
+        double             latency_ms = 0.0;
+        double             time_ms = 0.0;  // production time, steady clock, in ms
     };
 
-    std::unique_ptr<IptClassifier> m_classifier;
+    ipt_classifier* m_classifier = nullptr;
 
     std::thread m_processing_thread;
     c74::min::fifo<double> m_audio_fifo{16384};
@@ -78,12 +94,33 @@ private:
     std::atomic<bool> m_running = false; // lifetime control of internal classification thread
     std::atomic<bool> m_enabled = true;  // user-controlled flag to manually disable output
 
-    // flag indicating whether m_classifier's `initialize_model()` has been called (independently of success)
+    // flag indicating whether m_classifier's model has been initialized (independently of success)
     std::atomic<bool> m_model_initialized = false;
 
-    LeakyIntegrator m_integrator;
+    // Smoothing (ipt_smooth / ipt_set_smoothing_tau) lives entirely on the main
+    // thread (deliverer + attribute setters), touching state disjoint from the
+    // worker's ipt_process — mirroring how the old LeakyIntegrator was used.
 
     std::optional<std::vector<std::string>> m_class_names;
+
+    // steady-clock now(), in milliseconds, for stamping results
+    static double now_ms() {
+        return std::chrono::duration<double, std::milli>(
+                   std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
+    // Pull the class names from the loaded model into m_class_names (once).
+    void fetch_class_names() {
+        int n = ipt_num_classes(m_classifier);
+        if (n <= 0) return;
+        std::vector<std::string> names(static_cast<std::size_t>(n));
+        for (int i = 0; i < n; ++i) {
+            char buf[256];
+            ipt_get_class_name(m_classifier, i, buf, sizeof(buf));
+            names[static_cast<std::size_t>(i)] = buf;
+        }
+        m_class_names = std::move(names);
+    }
 
 public:
     MIN_DESCRIPTION{"Real-time Instrumental Playing Technique (IPT) recognition using a pre-trained classification model."};
@@ -101,11 +138,16 @@ public:
     argument<symbol> model_path_arg {this, "model", "Filepath to the TorchScript model to load. This argument is required. Use absolute path for your model or add your model to the Max file preferences list." };
     argument<symbol> device_arg {this, "device", "Device to use for inference: 'CPU', 'CUDA', or 'MPS'. Optional, defaults to 'CPU'." };
 
-    explicit ipt_tilde(const atoms& args = {}) { 
+    explicit ipt_tilde(const atoms& args = {}) {
         try {
             auto model_path = parse_model_path(args);
-            auto device_type = parse_device_type(args);
-            m_classifier = std::make_unique<IptClassifier>(model_path, device_type);
+            auto device = parse_device_type(args);
+            // Defaults here; threshold/window attribute values are pushed in `setup`.
+            m_classifier = ipt_create(model_path.c_str(), device,
+                                      DEFAULT_MINIMUM_THRESHOLD, DEFAULT_THRESHOLD_WINDOW_MS);
+            if (!m_classifier) {
+                error(ipt_last_error());
+            }
         } catch (std::runtime_error& e) {
             error(e.what());
         }
@@ -118,6 +160,10 @@ public:
         if (m_processing_thread.joinable()) {
             m_running = false;
             m_processing_thread.join();
+        }
+        if (m_classifier) {
+            ipt_destroy(m_classifier);
+            m_classifier = nullptr;
         }
     }
     
@@ -140,15 +186,25 @@ public:
                 assert(m_classifier);
 
                 if (!m_class_names) {
-                    m_class_names = *m_classifier->get_class_names();
+                    fetch_class_names();
                 }
 
                 TimedResult timed;
                 std::vector<float> distribution;
+                double latency_ms = 0.0;
                 bool has_result = false;
 
+                // Drain all pending results, smoothing each with libipt's leaky
+                // integrator on this (single) thread. Pass the production frame
+                // time so bursts keep their real spacing. The last smoothed
+                // distribution is the one we emit.
                 while (m_event_fifo.try_dequeue(timed)) {
-                    distribution = m_integrator.process(timed.result.distribution, timed.time);
+                    distribution.resize(timed.distribution.size());
+                    ipt_smooth(m_classifier,
+                               timed.distribution.data(), static_cast<int>(timed.distribution.size()),
+                               timed.time_ms,
+                               distribution.data(), static_cast<int>(distribution.size()));
+                    latency_ms = timed.latency_ms;
                     has_result = true;
                 }
 
@@ -161,7 +217,7 @@ public:
                     distribution_atms.emplace_back(v);
                 }
 
-                auto index = static_cast<long>(util::argmax(distribution));
+                auto index = static_cast<long>(argmax(distribution));
                 auto max_confidence = distribution[static_cast<std::size_t>(index)];
 
                 if (max_confidence >= confidence.get()) {
@@ -175,7 +231,7 @@ public:
                 }
 
                 atoms latency{"latency"};
-                latency.emplace_back(timed.result.inference_latency_ms);
+                latency.emplace_back(latency_ms);
                 dumpout.send(latency);
 
                 return {};
@@ -213,7 +269,7 @@ public:
             MIN_FUNCTION {
                 if (args.size() == 1 && args[0].type() == c74::min::message_type::float_argument) {
                     auto tau = std::min(1.0, std::max(0.0, static_cast<double>(args[0])));
-                    m_integrator.set_tau((1.0 - tau) * static_cast<double>(sensitivityrange.get()));
+                    ipt_set_smoothing_tau(m_classifier, (1.0 - tau) * static_cast<double>(sensitivityrange.get()));
                     return {tau};
                 }
 
@@ -239,7 +295,7 @@ public:
                 // Update the tau value
                 double new_tau = (1.0 - current_sensitivity) * static_cast<double>(args[0]);
                 new_tau = std::max(new_tau, 1e-6);  // Avoid zero or negative tau
-                m_integrator.set_tau(new_tau);
+                ipt_set_smoothing_tau(m_classifier, new_tau);
 
                 // Return the updated sensitivityrange value
                 return args;
@@ -251,14 +307,14 @@ public:
     }};
 
 
-    attribute<double> threshold{this, "threshold", EnergyThreshold::MINIMUM_THRESHOLD, Docs::THRESHOLD_TITLE, Docs::THRESHOLD_DESCRIPTION, setter{
+    attribute<double> threshold{this, "threshold", DEFAULT_MINIMUM_THRESHOLD, Docs::THRESHOLD_TITLE, Docs::THRESHOLD_DESCRIPTION, setter{
             MIN_FUNCTION {
                 if (args.size() == 1 && (args[0].type() == c74::min::message_type::float_argument
                                          || args[0].type() == c74::min::message_type::int_argument)) {
                     // Note: ignored on first call, as m_classifier is not yet initialized.
                     //       In this case, it will be passed through the `setup` message instead
                     if (m_classifier) {
-                        m_classifier->set_energy_threshold(static_cast<float>(args[0]));
+                        ipt_set_energy_threshold(m_classifier, static_cast<double>(args[0]));
                     }
 
                     return args;
@@ -271,14 +327,14 @@ public:
     };
 
 
-    attribute<int> window{this, "window", IptClassifier::DEFAULT_THRESHOLD_WINDOW_MS, Docs::WINDOW_TITLE, Docs::WINDOW_DESCRIPTION, setter{
+    attribute<int> window{this, "window", DEFAULT_THRESHOLD_WINDOW_MS, Docs::WINDOW_TITLE, Docs::WINDOW_DESCRIPTION, setter{
             MIN_FUNCTION {
                 if (args.size() == 1 && (args[0].type() == c74::min::message_type::int_argument
                                          || args[0].type() == c74::min::message_type::float_argument)) {
                     // Note: ignored on first call, as m_classifier is not yet initialized.
                     //       In this case, it will be passed through the `setup` message instead
                     if (m_classifier) {
-                        m_classifier->set_threshold_window(static_cast<int>(args[0]));
+                        ipt_set_threshold_window(m_classifier, static_cast<int>(args[0]));
                     }
 
                     return args;
@@ -333,9 +389,9 @@ public:
             return {};
         }
 
-        // If model has been successfully initialize, we can be sure that the model has valid class names
+        // If model has been successfully initialized, we can be sure that the model has valid class names
         if (!m_class_names) {
-            m_class_names = *m_classifier->get_class_names();
+            fetch_class_names();
         }
 
         atoms names{"classnames"};
@@ -352,11 +408,13 @@ public:
     // Note: Special function called internally by the min-api after the constructor and all attributes
     // have been initialized. This function cannot be called directly by a user
     message<> setup{this, "setup", MIN_FUNCTION {
-        m_classifier->set_energy_threshold(threshold.get());
-        m_classifier->set_threshold_window(window.get());
+        if (m_classifier) {
+            ipt_set_energy_threshold(m_classifier, threshold.get());
+            ipt_set_threshold_window(m_classifier, window.get());
 
-        // since m_classifier is initialized in ctor, we can be sure that it's fully initialized when thread is launched
-        m_processing_thread = std::thread(&ipt_tilde::main_loop, this);
+            // since m_classifier is created in the ctor, we can be sure it's valid when the thread is launched
+            m_processing_thread = std::thread(&ipt_tilde::main_loop, this);
+        }
         return {};
     }};
 
@@ -374,7 +432,7 @@ public:
 
         // If model initialization was successful: initialize buffers
         if (m_running) {
-            m_classifier->initialize_buffers(sample_rate, vector_length);
+            ipt_init_buffers(m_classifier, sample_rate, vector_length);
         }
 
         return {};
@@ -383,67 +441,68 @@ public:
 
 private:
     void main_loop() {
-        try {
-            m_classifier->initialize_model();
-            m_class_names = m_classifier->get_class_names();
+        // Model load: libipt reports failure via status code + ipt_last_error()
+        // rather than exceptions.
+        if (ipt_initialize_model(m_classifier) == IPT_OK) {
+            fetch_class_names();
             m_running = true;
-        } catch (const std::exception& e) {
+        } else {
             if (verbose.get()) {
-                cerr << e.what() << endl;
+                cerr << ipt_last_error() << endl;
             } else {
                 cerr << "error during loading" << endl;
             }
-        } catch (...) {
-            cerr << "unknown error during loading" << endl;
         }
 
         m_model_initialized = true; // true independently of success
 
-        try {
-            auto last_output = std::chrono::steady_clock::now();
+        std::vector<float> dist(256);
+        double latency_ms = 0.0;
+        auto last_output = std::chrono::steady_clock::now();
 
-            while (m_running) {
-                if (m_enabled) {
-                    std::vector<double> buffered_audio;
-                    double sample;
-                    while (m_audio_fifo.try_dequeue(sample)) {
-                        buffered_audio.push_back(sample);
-                    }
+        while (m_running) {
+            if (m_enabled) {
+                std::vector<double> buffered_audio;
+                double sample;
+                while (m_audio_fifo.try_dequeue(sample)) {
+                    buffered_audio.push_back(sample);
+                }
 
-                    if (!buffered_audio.empty()) {
-                        auto result = m_classifier->process(std::move(buffered_audio));
-                        if (result) {
-                            m_event_fifo.try_enqueue({*result, std::chrono::steady_clock::now()});
+                if (!buffered_audio.empty()) {
+                    int n = ipt_process(m_classifier,
+                                        buffered_audio.data(), static_cast<int>(buffered_audio.size()),
+                                        dist.data(), static_cast<int>(dist.size()), &latency_ms);
+                    if (n < 0) {
+                        if (verbose.get()) cerr << ipt_last_error() << endl;
+                        else               cerr << "model architecture is not compatible" << endl;
+                    } else if (n > 0) {
+                        // enqueue the RAW distribution; smoothing happens on the
+                        // main thread (deliverer) to keep integrator use single-threaded
+                        TimedResult timed;
+                        timed.distribution.assign(dist.begin(),
+                                                  dist.begin() + std::min<int>(n, static_cast<int>(dist.size())));
+                        timed.latency_ms = latency_ms;
+                        timed.time_ms    = now_ms();
+                        m_event_fifo.try_enqueue(std::move(timed));
 
-                            if (period.get() == 0) {
-                                deliverer.delay(0.0);
-                            }
+                        if (period.get() == 0) {
+                            deliverer.delay(0.0);
                         }
                     }
                 }
+            }
 
-                if (period.get() > 0) {
-                    auto now = std::chrono::steady_clock::now();
-                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_output).count();
-                    if (elapsed >= period.get()) {
-                        deliverer.delay(0.0);
-                        last_output = now;
-                    }
+            if (period.get() > 0) {
+                auto now = std::chrono::steady_clock::now();
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_output).count();
+                if (elapsed >= period.get()) {
+                    deliverer.delay(0.0);
+                    last_output = now;
                 }
-
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
 
-        } catch (const std::exception& e) {
-            if (verbose.get()) {
-                cerr << e.what() << endl;
-            } else {
-                cerr << "model architecture is not compatible" << endl;
-            }
-        } catch (...) {
-            cerr << "unknown error" << endl;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
-
     }
 
 
@@ -469,9 +528,9 @@ private:
     }
 
 
-    torch::DeviceType parse_device_type(const atoms& args) {
+    ipt_device parse_device_type(const atoms& args) {
         if (args.size() < 2) {
-            return torch::kCPU;
+            return IPT_DEVICE_CPU;
         }
 
         if (args[1].type() == c74::min::message_type::symbol_argument) {
@@ -481,28 +540,28 @@ private:
             });
 
             if (device_str == "CPU") {
-                return torch::kCPU;
+                return IPT_DEVICE_CPU;
             } else if (device_str == "CUDA") {
-                return torch::kCUDA;
+                return IPT_DEVICE_CUDA;
             } else if (device_str == "MPS") {
-                return torch::kMPS;
+                return IPT_DEVICE_MPS;
             } else {
                 cwarn << "unknown device type \"" << device_str << "\", defaulting to CPU" << endl;
-                return torch::kCPU;
+                return IPT_DEVICE_CPU;
             }
         } else if (args[1].type() == c74::min::message_type::int_argument) {
-            auto device_idx = static_cast<int>(args[1]);
-
-            if (device_idx < 0 || device_idx >= static_cast<int>(torch::DeviceType::COMPILE_TIME_MAX_DEVICE_TYPES)) {
-                cwarn << "unknown device type \"" << device_idx << "\", defaulting to CPU" << endl;
-                return torch::kCPU;
+            switch (static_cast<int>(args[1])) {
+                case 0:  return IPT_DEVICE_CPU;
+                case 1:  return IPT_DEVICE_CUDA;
+                case 2:  return IPT_DEVICE_MPS;
+                default:
+                    cwarn << "unknown device type \"" << static_cast<int>(args[1]) << "\", defaulting to CPU" << endl;
+                    return IPT_DEVICE_CPU;
             }
-
-            return static_cast<torch::DeviceType>(device_idx);
         }
 
-        cwarn << "bad argument for message \"model\", defaulting to CPU << endl";
-        return torch::kCPU;
+        cwarn << "bad argument for message \"model\", defaulting to CPU" << endl;
+        return IPT_DEVICE_CPU;
     }
 };
 

@@ -1,14 +1,13 @@
 // -*- mode: c++; c-basic-offset:2 -*-
 
 #include "PiPo.h"
-#include "ipt_classifier.h"
-#include "leaky_integrator.h"
-#include "utility.h"
-#include <chrono>
+#include "ipt.h"
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <cstring>
 #include <unistd.h>
+#include <vector>
 
 // String attribute for file paths. The host splits a message like
 //   ipt.model /Users/me/Max 9/model.ts
@@ -92,45 +91,53 @@ std::string ipt_resolve_model_path (const char *name);
 class PiPoIPT : public PiPo
 {
 private:
-  std::unique_ptr<IptClassifier> classifier_;
+  ipt_classifier*     classifier_ = nullptr;
+  int                 numclasses_ = 0;
+  int                 window_length_ = 0;   // segment length reported by ipt_acquire_window
   std::vector<double> inputbuf_;
 
   // Batched inference: every block still produces one window (so results are
   // identical to per-block classification), but windows are collected and run
   // through the model in a single forward pass, which is far faster offline.
   // Windows are flushed when MAX_BATCH accumulate, and the remainder in finalize().
+  // Windows are owned by libipt (ipt_acquire_window) and freed with ipt_free_window.
   static constexpr std::size_t MAX_BATCH = 128;
-  std::vector<std::vector<float>> batch_windows_;
+  std::vector<float*>             batch_windows_;
   std::vector<double>             batch_times_;   // frame time (ms) of each window
   bool                            offline_ = false;  // batch only offline (mubu.process)
 
-  // temporal smoothing of the class distribution (driven by sensitivity / sensitivityrange)
-  LeakyIntegrator    integrator_;
+  // buffers for one flush: raw distributions from ipt_classify_batch, and the
+  // smoothed distribution awaiting output. Smoothing lives in libipt now.
+  std::vector<float> batch_dist_;         // numclasses_ * batch size, filled by classify_batch
   std::vector<float> pending_;            // latest smoothed distribution awaiting output
-  bool               have_pending_ = false;
   double             last_output_time_ = -1e18;  // frame time (ms) of last @period emit
 
-  // last values pushed to the classifier/integrator, so we only re-apply on change
+  // last values pushed to the classifier, so we only re-apply on change
   float applied_threshold_   = NAN;
   float applied_window_      = NAN;
   float applied_sensitivity_ = NAN;
   float applied_sensrange_   = NAN;
 
-  // Push current attribute values into the classifier / integrator.
+  static double clampd (double x, double lo, double hi)
+  { return std::max(lo, std::min(x, hi)); }
+
+  // Push current attribute values into the classifier.
   // Cheap: only calls a setter when the value actually changed since the last sync.
   void sync_attributes ()
   {
+    if (!classifier_) return;
+
     float threshold = threshold_attr_.get();
     if (threshold != applied_threshold_)
     {
-      classifier_->set_energy_threshold(threshold);
+      ipt_set_energy_threshold(classifier_, threshold);
       applied_threshold_ = threshold;
     }
 
     float window = window_attr_.get();
     if (window != applied_window_)
     {
-      classifier_->set_threshold_window(static_cast<int>(window));
+      ipt_set_threshold_window(classifier_, static_cast<int>(window));
       applied_window_ = window;
     }
 
@@ -139,12 +146,21 @@ private:
     if (sensitivity != applied_sensitivity_  ||  sensrange != applied_sensrange_)
     {
       // sensitivity 1 -> tau 0 (no smoothing, most reactive); lower sensitivity -> more smoothing
-      double tau = (1.0 - util::clamp(static_cast<double>(sensitivity), 0.0, 1.0))
+      double tau = (1.0 - clampd(static_cast<double>(sensitivity), 0.0, 1.0))
                  * static_cast<double>(sensrange);
-      integrator_.set_tau(tau);
+      ipt_set_smoothing_tau(classifier_, tau);
       applied_sensitivity_ = sensitivity;
       applied_sensrange_   = sensrange;
     }
+  }
+
+  // Free any windows still held by a pending (unflushed) batch.
+  void free_batch_windows ()
+  {
+    for (float* w : batch_windows_)
+      ipt_free_window(w);
+    batch_windows_.clear();
+    batch_times_.clear();
   }
 
 public:
@@ -176,7 +192,10 @@ public:
   }
 
   ~PiPoIPT (void)
-  { }
+  {
+    free_batch_windows();
+    if (classifier_) ipt_destroy(classifier_);
+  }
 
   int streamAttributes (bool hasTimeTags, double rate, double offset,
                         unsigned int width, unsigned int height,
@@ -196,12 +215,12 @@ public:
     std::string resolved_path = ipt_resolve_model_path(modelname_attr_.getStr());
     const char *model_path = resolved_path.c_str();
 
-    auto device = torch::kCPU;
+    ipt_device device = IPT_DEVICE_CPU;
     switch (device_attr_.get())
     {
-      case 1: device = torch::kCUDA;    break;
-      case 2: device = torch::kMPS;         break;
-      default: device = torch::kCPU;    break;
+      case 1: device = IPT_DEVICE_CUDA; break;
+      case 2: device = IPT_DEVICE_MPS;  break;
+      default: device = IPT_DEVICE_CPU; break;
     }
 
     if (model_path  &&  model_path[0] != 0)
@@ -216,46 +235,52 @@ public:
         return PIPO_ERROR;
       }
 
-      try {
-        classifier_ = std::make_unique<IptClassifier>(std::string(model_path), device);
-        classifier_->initialize_model();
-        classifier_->initialize_buffers(sr, maxFrames);
-        inputbuf_.reserve(maxFrames);
+      // discard any previously loaded model / pending batch
+      free_batch_windows();
+      if (classifier_) { ipt_destroy(classifier_); classifier_ = nullptr; }
 
-        // reset smoothing, batching and output-period state for the freshly loaded
-        // model, then push the current attribute values into classifier / integrator
-        integrator_   = LeakyIntegrator{};
-        have_pending_ = false;
-        last_output_time_ = -1e18;
-        batch_windows_.clear();
-        batch_times_.clear();
-        batch_windows_.reserve(MAX_BATCH);
-        batch_times_.reserve(MAX_BATCH);
-        applied_threshold_ = applied_window_ = applied_sensitivity_ = applied_sensrange_ = NAN;
-        sync_attributes();
-      }
-      catch (const std::exception& e)  // catches c10::Error from torch as well as std::runtime_error
+      classifier_ = ipt_create(model_path, device,
+                               threshold_attr_.get(), static_cast<int>(window_attr_.get()));
+      if (!classifier_  ||  ipt_initialize_model(classifier_) != IPT_OK)
       {
-        printf("ERROR %s\n", e.what());
-        signalError(e.what());
+        std::string msg = "cannot load model: ";
+        msg += ipt_last_error();
+        if (classifier_) { ipt_destroy(classifier_); classifier_ = nullptr; }
+        signalError(msg.c_str());
         return PIPO_ERROR;
       }
+      ipt_init_buffers(classifier_, static_cast<int>(sr), static_cast<int>(maxFrames));
+      inputbuf_.reserve(maxFrames);
+
+      // reset batching and output-period state for the freshly loaded model,
+      // then push the current attribute values into the classifier
+      last_output_time_ = -1e18;
+      batch_windows_.reserve(MAX_BATCH);
+      batch_times_.reserve(MAX_BATCH);
+      applied_threshold_ = applied_window_ = applied_sensitivity_ = applied_sensrange_ = NAN;
+      sync_attributes();
 
       // query model output parameters
-      std::vector<std::string> classnames = *classifier_->get_class_names();
-      int numclasses = classnames.size();
+      numclasses_ = ipt_num_classes(classifier_);
+      pending_.assign(numclasses_, 0.f);
 
-      const char **out_labels = new const char *[numclasses];
-      for (int i = 0; i < numclasses; i++)
-            out_labels[i] = classnames[i].c_str();
+      std::vector<std::string> classnames(numclasses_);
+      const char **out_labels = new const char *[numclasses_];
+      for (int i = 0; i < numclasses_; i++)
+      {
+        char name[256];
+        ipt_get_class_name(classifier_, i, name, sizeof(name));
+        classnames[i] = name;
+        out_labels[i] = classnames[i].c_str();
+      }
 
       // determine output stream parameters
       double out_framerate = sr / maxFrames;
-      ret = propagateStreamAttributes(true, out_framerate, 0, numclasses, 1,
+      ret = propagateStreamAttributes(true, out_framerate, 0, numclasses_, 1,
                                           out_labels, false, 0.001 / out_framerate, 1);
       delete [] out_labels;
     }
-    
+
     return ret;
   }
 
@@ -283,10 +308,14 @@ public:
 
     // acquire the window this block would classify (energy gating happens here),
     // but defer the model forward: collect windows and run them as one batch.
-    std::optional<std::vector<float>> window = classifier_->acquire_window(std::move(inputbuf_));
-    if (window)
+    // The window is malloc'd by libipt; we own it until ipt_free_window.
+    float* window = nullptr;
+    int len = ipt_acquire_window(classifier_, inputbuf_.data(),
+                                 static_cast<int>(inputbuf_.size()), &window);
+    if (len > 0)
     {
-      batch_windows_.push_back(std::move(*window));
+      window_length_ = len;
+      batch_windows_.push_back(window);
       batch_times_.push_back(time);
     }
 
@@ -305,32 +334,34 @@ public:
     if (batch_windows_.empty())
       return PIPO_OK;
 
-    std::vector<ClassificationResult> results;
-    try {
-      results = classifier_->classify(batch_windows_);
-    }
-    catch (const std::exception& e)  // catches c10::Error from torch as well as std::runtime_error
+    int n = static_cast<int>(batch_windows_.size());
+    batch_dist_.resize(static_cast<std::size_t>(n) * numclasses_);
+
+    int got = ipt_classify_batch(classifier_,
+                                 reinterpret_cast<const float* const*>(batch_windows_.data()),
+                                 n, window_length_,
+                                 batch_dist_.data(), static_cast<int>(batch_dist_.size()),
+                                 nullptr);
+    if (got < 0)
     {
-      printf("pipo.ipt ERROR %s\n", e.what());
-      signalError(e.what());
-      batch_windows_.clear();
-      batch_times_.clear();
+      printf("pipo.ipt ERROR %s\n", ipt_last_error());
+      signalError(ipt_last_error());
+      free_batch_windows();
       return PIPO_ERROR;
     }
 
     int ret = PIPO_OK;
     int period_ms = static_cast<int>(period_attr_.get());
 
-    for (std::size_t i = 0; i < results.size(); i++)
+    for (int i = 0; i < got; i++)
     {
       double t = batch_times_[i];
 
-      // feed the integrator the frame time (not wall-clock) so its time-aware
-      // smoothing keeps the real audio spacing even though we process in a burst
-      auto ts = std::chrono::steady_clock::time_point{}
-              + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                  std::chrono::duration<double, std::milli>(t));
-      pending_ = integrator_.process(results[i].distribution, ts);
+      // smooth the raw distribution with libipt's leaky integrator. Pass the
+      // frame time (not wall-clock) so time-aware smoothing keeps the real audio
+      // spacing even though we process in a burst.
+      ipt_smooth(classifier_, &batch_dist_[static_cast<std::size_t>(i) * numclasses_],
+                 numclasses_, t, pending_.data(), static_cast<int>(pending_.size()));
 
       // @period: 0 -> emit every inference; >0 -> at most one emit per period (ms),
       // paced on frame time. @confidence does not gate (single outlet).
@@ -343,8 +374,7 @@ public:
       }
     }
 
-    batch_windows_.clear();
-    batch_times_.clear();
+    free_batch_windows();
     return ret;
   }
 

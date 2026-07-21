@@ -1,47 +1,26 @@
-cmake_minimum_required(VERSION 3.19)  
+cmake_minimum_required(VERSION 3.19)
 set(CMAKE_CXX_STANDARD 17)
 project(ipt_max VERSION 0.0.1)
 
-# TODO: Won't be able to compile universal binaries using torch -- find solution
+# Universal binaries are not possible with torch; libipt is arm64-only.
 set(CMAKE_OSX_ARCHITECTURES arm64)
-include(FetchContent)
 
-set(LIBTORCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/libs/libtorch")
-set(LIBTORCH_PYTHON_VERSION "3.12")
-set(LIBTORCH_URL "https://anaconda.org/pytorch/pytorch/2.4.1/download/osx-arm64/pytorch-2.4.1-py3.12_0.tar.bz2")
+# --------------------------------------------------------------------------------------
+# libipt (git submodule) owns the entire IPT inference core, the r8brain resampler,
+# and libtorch. ipt_tilde consumes ONLY its C ABI (libipt/include/ipt.h) via the
+# ipt_api target — no torch, model, or buffer internals leak into this project.
+# add_subdirectory builds libipt.dylib in-tree and defines ipt_api.
+# --------------------------------------------------------------------------------------
+add_subdirectory(libipt)
 
-# Use FetchContent to download and extract libtorch
-# FetchContent_Declare(
-#         libtorch
-#         URL ${LIBTORCH_URL}
-#         SOURCE_DIR ${LIBTORCH_DIR}  # Where the tar.bz2 will be extracted
-#         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-# )
+# The libtorch runtime dylibs libipt.dylib depends on. libipt downloads torch
+# into its own tree; the Max externals copy these + libipt.dylib into their .mxo
+# bundles. (find_package's TORCH_INSTALL_PREFIX lives in libipt's scope, so we
+# reference the known layout here for the min targets to use.)
+set(IPT_TORCH_LIB_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/libipt/libs/libtorch/lib/python3.12/site-packages/torch/lib")
 
-# FetchContent_MakeAvailable(libtorch)
-
-if(NOT EXISTS "${LIBTORCH_DIR}/lib")
-    FetchContent_Declare(
-        libtorch
-        URL ${LIBTORCH_URL}
-        SOURCE_DIR ${LIBTORCH_DIR}
-        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-    )
-    FetchContent_MakeAvailable(libtorch)
-else()
-    message(STATUS "libtorch found locally at ${LIBTORCH_DIR}, skipping download")
-endif()
-
-list(APPEND CMAKE_PREFIX_PATH "${LIBTORCH_DIR}/lib/python${LIBTORCH_PYTHON_VERSION}/site-packages/torch/share/cmake")
-find_package(Torch REQUIRED)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
-
-message(NOTICE "Note: a 'static library kineto_LIBRARY-NOTFOUND' warning is expected here.
-This package is built with pre-compiled binaries from conda-forge which do not include said library,
-but it's not needed for this package to work\n")
-
-add_subdirectory(libs/r8brain)
-add_subdirectory(src)
+# Standalone CLI example (ported to the C ABI).
 add_subdirectory(app/ipt_example)
 
 # min-api config
@@ -49,7 +28,7 @@ include(${CMAKE_SOURCE_DIR}/min-api/script/min-package.cmake)
 set(C74_MIN_API_DIR ${CMAKE_SOURCE_DIR}/min-api)
 set(C74_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/externals)
 
-# min targets
+# min targets — both ported to the libipt C ABI.
 add_subdirectory(ipt_tilde)
 add_subdirectory(pipo.ipt)
 
