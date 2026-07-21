@@ -15,6 +15,7 @@ This object loads and runs TorchScript (`.ts`) classification models, enabling l
 👉 Use ipt~ in your project using the self-contained bundle from the C API: [libipt](https://github.com/nbrochec/libipt)
 
 ### 💡 NEW v1.2.0
++  Inference is now powered by [libipt](https://github.com/nbrochec/libipt), a standalone C library, the IPT core is no longer embedded in this repo, but included as a submodule.
 + New attributes: `@period` allows you to throttle the output of ipt~ while keeping leaky integrator smoothing
 + Addition of a trumpet model into the ipt~ Max Package
 + [PiPo](https://github.com/ircam-ismm/pipo) (Plugin Interface for Processing Objects) module for usage in [MuBu](https://ircam-ismm.github.io/max-msp/mubu.html) (Multimodal Analysis of Sound and Motion), developed with [diemoschwarz](https://github.com/diemoschwarz)
