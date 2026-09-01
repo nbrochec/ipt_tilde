@@ -29,12 +29,17 @@ std::string ipt_resolve_model_path (const char *name)
     char abspath[MAX_PATH_CHARS];
     if (path_toabsolutesystempath(outvol, filename, abspath) == 0)
     {
+#if defined(_WIN32)
+      // no /Volumes symlink indirection on Windows; the absolute path is usable as-is
+      return abspath;
+#else
       // canonicalize the /Volumes/<bootvol>/... form Max returns: torch
       // cannot open the symlinked path, but realpath() resolves it to /Users/...
       char real[PATH_MAX];
       if (realpath(abspath, real) != NULL)
         return real;
       return abspath;
+#endif
     }
   }
 

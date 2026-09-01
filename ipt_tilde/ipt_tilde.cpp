@@ -1,6 +1,9 @@
+// <algorithm> must precede c74_min.h: its c74_min_limit.h does `using std::clamp`
+// without including it, which MSVC's non-transitive STL rejects.
+#include <algorithm>
+#include <optional>
 #include "c74_min.h"
 #include <chrono>
-#include <algorithm>
 #include <cctype>
 
 #include "ipt.h"
