@@ -61,3 +61,49 @@ jobs:
 
       - name: unit test
         run: ctest --test-dir build --output-on-failure
+
+  # ---------------------------------------------------------------------------
+  # Same build on Windows: libipt fetches the official MSVC libtorch (same
+  # 2.4.1 CPU version — models are interchangeable), the externals come out as
+  # flat .mxe64 files, and their DLL closure lands in the package's support/
+  # folder (Max's DLL search path for packages).
+  # ---------------------------------------------------------------------------
+  build-windows:
+    name: build & test (Windows x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive   # libipt (+ its model), min-api, pipo-sdk
+
+      - name: cache libtorch
+        uses: actions/cache@v4
+        with:
+          path: libipt/libs/libtorch
+          key: libtorch-2.4.1-win-x64
+
+      - name: configure
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
+      - name: build
+        run: cmake --build build --config Release -j 4
+
+      - name: check externals + support DLLs + CLI were produced
+        shell: bash
+        run: |
+          set -eux
+          find externals -name "ipt~.mxe64" | grep -q .
+          find externals -name "pipo.ipt.mxe64" | grep -q .
+          test -f support/ipt.dll
+          test -f support/torch_cpu.dll
+          test -x build/app/ipt_example/Release/ipt_example.exe
+
+      - name: runtime check — classify against libipt's dummy model
+        shell: bash
+        run: ./build/app/ipt_example/Release/ipt_example.exe libipt/tests/dummy.ts
+
+      - name: unit test
+        shell: bash
+        run: ctest --test-dir build -C Release --output-on-failure

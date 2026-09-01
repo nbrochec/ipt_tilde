@@ -2,7 +2,6 @@
 #include "PiPoIPT.h"
 #include "MaxPiPo.h"
 #include "ext_path.h"
-#include <unistd.h>
 #include <cstring>
 #include <cstdlib>
 #include <climits>
@@ -15,7 +14,7 @@ std::string ipt_resolve_model_path (const char *name)
     return "";
 
   // already readable as given (absolute, or relative to the cwd): use as-is
-  if (access(name, R_OK) == 0)
+  if (IPT_PATH_READABLE(name))
     return name;
 
   // otherwise search Max's file search path

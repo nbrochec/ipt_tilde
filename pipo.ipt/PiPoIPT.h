@@ -6,8 +6,16 @@
 #include <cmath>
 #include <string>
 #include <cstring>
-#include <unistd.h>
 #include <vector>
+
+// Portable "is this path readable?" — MSVC has no unistd.h/R_OK.
+#if defined(_WIN32)
+#include <io.h>
+#define IPT_PATH_READABLE(p) (_access((p), 4) == 0)
+#else
+#include <unistd.h>
+#define IPT_PATH_READABLE(p) (access((p), R_OK) == 0)
+#endif
 
 // String attribute for file paths. The host splits a message like
 //   ipt.model /Users/me/Max 9/model.ts
@@ -227,7 +235,7 @@ public:
     {
       // pre-flight: report a clear error if the path is not readable, instead
       // of letting torch throw a cryptic fopen errno 2
-      if (access(model_path, R_OK) != 0)
+      if (!IPT_PATH_READABLE(model_path))
       {
         std::string msg = "cannot read model file: ";
         msg += model_path;
