@@ -82,12 +82,16 @@ jobs:
           path: libipt/libs/libtorch
           key: libtorch-2.4.1-win-x64
 
+      # bash, not the default pwsh: PowerShell tokenizes -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+      # at the dot and CMake receives an invalid "3".
       - name: configure
+        shell: bash
         run: >
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 
       - name: build
+        shell: bash
         run: cmake --build build --config Release -j 4
 
       - name: check externals + support DLLs + CLI were produced
