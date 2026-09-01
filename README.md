@@ -14,8 +14,9 @@ This object loads and runs TorchScript (`.ts`) classification models, enabling l
 
 👉 Use ipt~ in your project using the self-contained bundle from the C API: [libipt](https://github.com/nbrochec/libipt)
 
-### 💡 NEW v1.2.0
+### 💡 NEW v1.2.1
 +  Inference is now powered by [libipt](https://github.com/nbrochec/libipt), a standalone C library, the IPT core is no longer embedded in this repo, but included as a submodule.
++ **Windows x64 support**: both `ipt~` and `pipo.ipt` now build as `.mxe64` externals, with their runtime DLLs shipped in the Max package's `support/` folder. The same libtorch version (2.4.1, CPU) is used on every platform, so trained models are interchangeable.
 + New attributes: `@period` allows you to throttle the output of ipt~ while keeping leaky integrator smoothing
 + Addition of a trumpet model into the ipt~ Max Package
 + [PiPo](https://github.com/ircam-ismm/pipo) (Plugin Interface for Processing Objects) module for usage in [MuBu](https://ircam-ismm.github.io/max-msp/mubu.html) (Multimodal Analysis of Sound and Motion), developed with [diemoschwarz](https://github.com/diemoschwarz)
@@ -25,8 +26,8 @@ This object loads and runs TorchScript (`.ts`) classification models, enabling l
 
 ### ⚙️ Requirements
 
-+ macOS 10.13 or later
-+ Apple Silicon processor M1 or later (Note: this external doesn't work on Intel processors at the moment)
++ macOS 10.13 or later with an Apple Silicon processor (M1 or later — Intel Macs are not supported),
+  **or** Windows 10/11 on an x64 CPU with AVX2 (any desktop CPU from roughly 2013 onward)
 + Max 8.6 or later / Max 9.0.3 or later
 
 ### 💾 Installation
@@ -71,6 +72,8 @@ If you are interested in this topic, please check out our other papers:
 
 ## 💻 Build Instructions
 
+### macOS (Apple Silicon)
+
 - In a terminal, run the following commands:
 
 ```bash
@@ -86,9 +89,23 @@ cmake --build build --target ipt_tilde -j 8 --verbose
 cmake --build build --target pipo.ipt -j 8 --verbose
 ```
 
-**Note:** The instructions above may trigger a CMake warning:  `static library kineto_LIBRARY-NOTFOUND not found.`  However, this does not appear to affect compilation or functionality.  Using the pre-compiled binaries from [PyTorch](https://pytorch.org/) will avoid this warning, but as of version 2.4.1, their CPU performance is approximately 20x slower compared to the Anaconda-provided binaries.
+**Note:** The instructions above may trigger a CMake warning:  `static library kineto_LIBRARY-NOTFOUND not found.`  However, this does not appear to affect compilation or functionality.  Using the pre-compiled binaries from [PyTorch](https://pytorch.org/) will avoid this warning, but as of version 2.4.1, their CPU performance is approximately 20x slower compared to the Anaconda-provided binaries. If your CMake version is 4.0 or later, add `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`
 
 - Copy the produced `.mxo` external inside `~/Documents/Max 9/Packages/ipt_tilde/externals/`
+
+### Windows (x64)
+
+- Requires Visual Studio 2022 or later and CMake. In a terminal:
+
+```bat
+git clone git@github.com:DYCI2/ipt_tilde.git --recurse-submodules
+cd ipt_tilde
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+cmake --build build --config Release -j 8
+```
+
+- On first configure, CMake downloads the official libtorch for Windows (~176 MB) into `libipt/libs/libtorch`.
+- The build produces the `.mxe64` externals in `externals/` and their runtime DLLs (`ipt.dll` + the libtorch closure) in `support/`. Copy **both folders** into `Documents/Max 9/Packages/ipt_tilde/` — Max finds the DLLs through the package's `support/` folder.
 
 
 ## 📜 License and Fundings
