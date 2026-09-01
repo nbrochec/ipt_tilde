@@ -281,3 +281,7 @@ package-info.json
 
 # Libtorch (direct download, not a submodule)
 libs/libtorch
+
+# Extra folders
+build-xcode/
+build_libipt/

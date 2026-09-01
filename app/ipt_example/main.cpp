@@ -1,60 +1,70 @@
-#include "ipt_classifier.h"
+/*
+ * Standalone CLI consumer of libipt — no C++ inference core, no torch, just
+ * the C ABI in ipt.h. Feeds synthetic audio blocks and prints the top class
+ * whenever the model produces a classification.
+ *
+ * Run: ./ipt_example /path/to/model.ts
+ */
+#include "ipt.h"
+
+#include <cstdio>
 #include <random>
+#include <vector>
 
+int main(int argc, char** argv) {
+    const char* model_path = argc > 1
+        ? argv[1]
+        : "/Users/joakimborg/Downloads/test_20241104_222325.ts";
 
-static inline std::vector<double> random_vector(std::size_t n
-                                                , std::mt19937& rng
-                                                , std::uniform_real_distribution<>& dist) {
-    std::vector<double> vs(n);
-    for (double & v : vs) {
-        v = dist(rng);
+    const int sr                  = 44100;
+    const int input_vector_length = 64;
+
+    ipt_classifier* clf = ipt_create(model_path, IPT_DEVICE_CPU,
+                                     /*energy_threshold_db=*/-80.0,
+                                     /*threshold_window_ms=*/20);
+    if (!clf) {
+        std::fprintf(stderr, "ipt_create failed: %s\n", ipt_last_error());
+        return 1;
     }
+    if (ipt_initialize_model(clf) != IPT_OK) {
+        std::fprintf(stderr, "model load failed: %s\n", ipt_last_error());
+        ipt_destroy(clf);
+        return 1;
+    }
+    ipt_init_buffers(clf, sr, input_vector_length);
 
-    return vs;
-}
+    const int nclasses = ipt_num_classes(clf);
+    std::vector<float> dist(nclasses > 0 ? nclasses : 256);
 
-
-
-int main() {
-    std::string model_path = "/Users/joakimborg/Downloads/test_20241104_222325.ts";
-    auto device = torch::kCPU;
-    double energy_threshold_db = EnergyThreshold::MINIMUM_THRESHOLD;
-    int energy_threshold_ms = 20;
-
-    int sr = 44100;
-    int input_vector_length = 64;
+    // Random audio, which obviously won't yield meaningful classifications —
+    // this just exercises the full processing path end-to-end.
+    std::random_device rd;
+    std::mt19937 rng(rd());
+    std::uniform_real_distribution<double> uni(-1.0, 1.0);
 
     std::size_t num_inferences = 10;
-
-    auto classifier = IptClassifier{model_path, device, energy_threshold_db, energy_threshold_ms};
-
-    classifier.initialize_model();
-    classifier.initialize_buffers(sr, input_vector_length);
-
-    std::vector<ClassificationResult> output_classes;
-
-    // Here, we're just using random values, which obviously won't yield good results in terms of classification
-    std::random_device rd;
-    auto rng = std::mt19937(rd());
-    std::uniform_real_distribution<double> dist(-1.0, 1.0);
-
     while (num_inferences > 0) {
-        auto audio_input_vector = random_vector(input_vector_length, rng, dist);
+        std::vector<double> block(input_vector_length);
+        for (double& v : block) v = uni(rng);
 
-        auto result = classifier.process(std::move(audio_input_vector));
+        int n = ipt_process(clf, block.data(), (int) block.size(),
+                            dist.data(), (int) dist.size(), nullptr);
+        if (n < 0) {
+            std::fprintf(stderr, "process error: %s\n", ipt_last_error());
+            break;
+        }
+        if (n > 0) {
+            int best = 0;
+            for (int i = 1; i < n; ++i)
+                if (dist[i] > dist[best]) best = i;
 
-        if (result) {
-            output_classes.push_back(*result);
+            char name[128];
+            ipt_get_class_name(clf, best, name, sizeof(name));
+            std::printf("%s\n", name);
             --num_inferences;
         }
     }
 
-    auto class_names = *classifier.get_class_names();
-
-    for (const auto& output : output_classes) {
-        auto class_index = util::argmax(output.distribution);
-        std::cout << class_names[class_index] << std::endl;
-    }
-
+    ipt_destroy(clf);
     return 0;
 }

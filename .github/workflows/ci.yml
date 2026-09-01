@@ -1,0 +1,63 @@
+name: CI
+
+# ipt_tilde consumes its inference core from libipt (a git submodule) through the
+# C ABI, and builds two Max externals (ipt~, pipo.ipt) plus a CLI example. This
+# workflow builds the whole thing from scratch on Apple Silicon (libtorch is
+# arm64-only) and runs a real runtime check: the CLI must load libipt.dylib +
+# libtorch and classify against libipt's bundled dummy model.
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+  workflow_dispatch:        # lets you run it by hand from the Actions tab
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build & test (Apple Silicon)
+    runs-on: macos-14            # Apple Silicon — the only supported target
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive   # libipt (+ its model), min-api, pipo-sdk
+
+      # libtorch is a ~150 MB pinned download fetched by libipt's CMake. Cache it
+      # so only the first run (and torch version bumps) pay for it.
+      - name: cache libtorch
+        uses: actions/cache@v4
+        with:
+          path: libipt/libs/libtorch
+          key: libtorch-2.4.1-osx-arm64
+
+      - name: configure
+        run: |
+          set -eux
+          # CMAKE_POLICY_VERSION_MINIMUM: min-api's test/mock ships an ancient
+          # cmake_minimum_required that current CMake otherwise rejects.
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+                -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
+      - name: build
+        run: cmake --build build -j 4
+
+      - name: check externals + CLI were produced
+        run: |
+          set -eux
+          test -d "externals/ipt~.mxo"
+          test -d "externals/pipo.ipt.mxo"
+          test -x build/app/ipt_example/ipt_example
+
+      - name: runtime check — classify against libipt's dummy model
+        run: |
+          set -eux
+          ./build/app/ipt_example/ipt_example libipt/tests/dummy.ts
+
+      - name: unit test
+        run: ctest --test-dir build --output-on-failure
