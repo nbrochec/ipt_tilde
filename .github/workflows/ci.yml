@@ -11,6 +11,8 @@ on:
     branches: [dev, main]
   pull_request:
   workflow_dispatch:        # lets you run it by hand from the Actions tab
+  schedule:
+    - cron: "0 5 * * 1,4"   # Mon & Thu, 05:00 UTC; inside a 7-day window
 
 permissions:
   contents: read
