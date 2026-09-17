@@ -6,23 +6,19 @@
 
 ipt~ is a Max/MSP external object for real-time classification of instrumental playing techniques.
 
-ipt~ is a core component of **SPIRIT** (System for Real-Time Recognition of Instrumental Playing Techniques).
-
 This object loads and runs TorchScript (`.ts`) classification models, enabling low latency inference on CPU and MPS devices.
 
 👉 Train your own playing techniques recognition model in following instructions from the [ipt_recognition](http://github.com/nbrochec/ipt_recognition) repository.
 
 👉 Use ipt~ in your project using the self-contained bundle from the C API: [libipt](https://github.com/nbrochec/libipt)
 
-### 💡 NEW v1.2.1
+### 💡 NEW v2.0.0
++ `pipo.ipt` real-time inference now runs on a dedicated worker thread, off the MSP audio thread (like `ipt~`); batch mode is used automatically for offline hosts such as `mubu.process`, developed with [diemoschwarz](https://github.com/diemoschwarz)
 +  Inference is now powered by [libipt](https://github.com/nbrochec/libipt), a standalone C library, the IPT core is no longer embedded in this repo, but included as a submodule.
-+ **Windows x64 support**: both `ipt~` and `pipo.ipt` now build as `.mxe64` externals, with their runtime DLLs shipped in the Max package's `support/` folder. The same libtorch version (2.4.1, CPU) is used on every platform, so trained models are interchangeable.
++ **Windows x64 support**: both `ipt~` and `pipo.ipt` now build as `.mxe64` externals.
 + New attributes: `@period` allows you to throttle the output of ipt~ while keeping leaky integrator smoothing
-+ Addition of a trumpet model into the ipt~ Max Package
-+ [PiPo](https://github.com/ircam-ismm/pipo) (Plugin Interface for Processing Objects) module for usage in [MuBu](https://ircam-ismm.github.io/max-msp/mubu.html) (Multimodal Analysis of Sound and Motion), developed with [diemoschwarz](https://github.com/diemoschwarz)
-
-### ⬆ Upcoming updates
-+ Development of a VAMP Plugin, with [pierreguillot](https://github.com/pierreguillot)
++ New `@threads` attribute to set the number of torch intra-op threads.
++ Addition of two trumpet models (with and without harmon mute) into the ipt~ Max Package
 
 ### ⚙️ Requirements
 
@@ -61,6 +57,9 @@ If you use this work in your paper, please consider citing the followings:
   address={Canberra, Australia}
 }
 ```
+
+## ⬆ Other Project with ipt~
++ [IPT VAMP Plugin](https://github.com/Ircam-Partiels/ipt-vamp-plugin) by [pierreguillot](https://github.com/pierreguillot)
 
 ## 📚 Related Work
 

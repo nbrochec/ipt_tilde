@@ -18,10 +18,6 @@ target_link_libraries(${PROJECT_NAME}
         PRIVATE
         ipt_api)
 
-# version stamp printed in the Max console banner (PACKAGE_VERSION is set in
-# the top-level CMakeLists.txt)
-target_compile_definitions(${PROJECT_NAME} PRIVATE IPT_PACKAGE_VERSION="${PACKAGE_VERSION}")
-
 include(${C74_MIN_API_DIR}/script/min-posttarget.cmake)
 include(${C74_MIN_API_DIR}/test/min-object-unittest.cmake)
 

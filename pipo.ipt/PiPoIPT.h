@@ -101,10 +101,6 @@ private:
 //   - returns empty for empty input.
 std::string ipt_resolve_model_path (const char *name);
 
-// Implemented by the host wrapper (pipo.ipt.cpp). Prints the version/credits
-// banner to the Max console once per Max session, like ipt~ does.
-void ipt_post_banner_once ();
-
 class PiPoIPT : public PiPo
 {
 private:
@@ -276,8 +272,6 @@ public:
     device_attr_.addEnumItem("CPU",  "Use CPU");
     device_attr_.addEnumItem("CUDA", "NVIDIA GPU");
     device_attr_.addEnumItem("MPS",  "AppleSilicon GPU");
-
-    ipt_post_banner_once();
 
     worker_dist_.resize(256);
     running_ = true;

@@ -30,8 +30,9 @@ add_subdirectory(app/ipt_example)
 # min-api config
 # max-package.cmake generates a verinfo.rc on Windows from PACKAGE_VERSION; with
 # no package-info.json in this repo the variable would be empty and its
-# string(REPLACE) hard-errors. Keep in sync with the ipt~ boot stamp.
-set(PACKAGE_VERSION "1.2.1")
+# string(REPLACE) hard-errors. Also stamped into the ipt~ console banner
+# (IPT_PACKAGE_VERSION define), so this is the single place to bump.
+set(PACKAGE_VERSION "2.0.0")
 include(${CMAKE_SOURCE_DIR}/min-api/script/min-package.cmake)
 set(C74_MIN_API_DIR ${CMAKE_SOURCE_DIR}/min-api)
 set(C74_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/externals)

@@ -17,12 +17,17 @@ target_link_libraries(${PROJECT_NAME}
         PRIVATE
         ipt_api)
 
+# version stamp printed in the Max console banner (PACKAGE_VERSION is set in
+# the top-level CMakeLists.txt)
+target_compile_definitions(${PROJECT_NAME} PRIVATE IPT_PACKAGE_VERSION="${PACKAGE_VERSION}")
+
 include(${C74_MIN_API_DIR}/script/min-posttarget.cmake)
 include(${C74_MIN_API_DIR}/test/min-object-unittest.cmake)
 
 # the unit test #includes ipt_tilde.cpp, so it links libipt for ipt.h + the C ABI
 # (replaces a stale reference to a non-existent "shared_code" target).
 target_link_libraries(${TEST_NAME} PUBLIC ipt_api)
+target_compile_definitions(${TEST_NAME} PRIVATE IPT_PACKAGE_VERSION="${PACKAGE_VERSION}")
 
 # On Windows the test executable can only find ipt.dll + the torch closure by
 # co-location (no rpath); copy them beside it so ctest can run.

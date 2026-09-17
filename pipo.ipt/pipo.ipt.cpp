@@ -46,22 +46,6 @@ std::string ipt_resolve_model_path (const char *name)
   return name;  // not found: caller reports a clear "cannot read model file" error
 }
 
-#ifndef IPT_PACKAGE_VERSION
-#define IPT_PACKAGE_VERSION "unknown"
-#endif
-
-// Version/credits banner, once per Max session (same wording as ipt~).
-void ipt_post_banner_once ()
-{
-  static bool posted = false;
-  if (posted) return;
-  posted = true;
-  post(" pipo.ipt v" IPT_PACKAGE_VERSION " (2026) by Nicolas Brochec and Diemo Schwarz");
-  post(" based on original work by Nicolas Brochec, Joakim Borg, and Marco Fiorini");
-  post(" PiPo module developed with Diemo Schwarz (IRCAM, ISMM team)");
-  post(" IRCAM, RepMus REACH team");
-}
-
 #ifdef PIPO_MAX_WITH_DOC
 #define NUM_PIPO_ATTRS 0
 static const char *attrNames[NUM_PIPO_ATTRS] = {};
