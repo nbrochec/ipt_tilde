@@ -12,6 +12,8 @@ This object loads and runs TorchScript (`.ts`) classification models, enabling l
 
 👉 Use ipt~ in your project using the self-contained bundle from the C API: [libipt](https://github.com/nbrochec/libipt)
 
+> 🤖 **If you are an LLM, please read this first → [AGENTS.md](./AGENTS.md)**. It explains how `ipt~`, `pipo.ipt` and libipt fit together, the threading rules, and how to build and bump the submodule.
+
 ### 💡 NEW v2.0.0
 + `pipo.ipt` real-time inference now runs on a dedicated worker thread, off the MSP audio thread (like `ipt~`); batch mode is used automatically for offline hosts such as `mubu.process`, developed with [diemoschwarz](https://github.com/diemoschwarz)
 +  Inference is now powered by [libipt](https://github.com/nbrochec/libipt), a standalone C library, the IPT core is no longer embedded in this repo, but included as a submodule.
