@@ -7,6 +7,11 @@
 #include <string>
 #include <cstring>
 #include <vector>
+#include <thread>
+#include <atomic>
+#include <mutex>
+#include <chrono>
+#include "readerwriterqueue/readerwriterqueue.h"
 
 // Portable "is this path readable?" — MSVC has no unistd.h/R_OK.
 #if defined(_WIN32)
@@ -120,6 +125,22 @@ private:
   std::vector<float> pending_;            // latest smoothed distribution awaiting output
   double             last_output_time_ = -1e18;  // frame time (ms) of last @period emit
 
+  // Real-time mode (pipo~): the host calls frames() from the MSP perform routine,
+  // i.e. the audio thread, so the torch forward must NOT run there. Mirroring
+  // ipt~: frames() only pushes samples into a lock-free FIFO and pops finished
+  // raw distributions; a dedicated worker thread runs ipt_process() and pushes
+  // the results back. Smoothing and output stay on the host thread.
+  struct RawResult { std::vector<float> dist; };
+  moodycamel::ReaderWriterQueue<double>    audio_fifo_{16384};
+  moodycamel::ReaderWriterQueue<RawResult> result_fifo_{64};
+  std::thread        worker_;
+  std::atomic<bool>  running_{false};    // worker thread lifetime
+  std::atomic<bool>  rt_active_{false};  // worker should drain audio_fifo_ and classify
+  std::mutex         classifier_mutex_;  // held by the worker around ipt_process, and by
+                                         // streamAttributes while (re)creating classifier_
+  std::vector<float> worker_dist_;       // worker-side scratch buffer for ipt_process
+  bool               have_result_ = false; // at least one distribution since model load
+
   // last values pushed to the classifier, so we only re-apply on change
   float applied_threshold_   = NAN;
   float applied_window_      = NAN;
@@ -162,6 +183,58 @@ private:
     }
   }
 
+  // Worker thread: real-time inference off the audio thread.
+  void worker_loop ()
+  {
+    std::vector<double> buffered;
+    buffered.reserve(16384);
+
+    while (running_.load(std::memory_order_relaxed))
+    {
+      bool did_work = false;
+
+      if (rt_active_.load(std::memory_order_acquire))
+      {
+        buffered.clear();
+        double sample;
+        while (audio_fifo_.try_dequeue(sample))
+          buffered.push_back(sample);
+
+        if (!buffered.empty())
+        {
+          std::lock_guard<std::mutex> lock(classifier_mutex_);
+          if (classifier_ && rt_active_.load(std::memory_order_acquire))
+          {
+            did_work = true;
+            int n = ipt_process(classifier_, buffered.data(), static_cast<int>(buffered.size()),
+                                worker_dist_.data(), static_cast<int>(worker_dist_.size()), nullptr);
+            if (n > 0)
+            {
+              RawResult r;
+              r.dist.assign(worker_dist_.begin(),
+                            worker_dist_.begin() + std::min<int>(n, static_cast<int>(worker_dist_.size())));
+              result_fifo_.try_enqueue(std::move(r));   // dropped if the host is not consuming
+            }
+            else if (n < 0)
+              printf("pipo.ipt ERROR %s\n", ipt_last_error());
+          }
+        }
+      }
+
+      std::this_thread::sleep_for(std::chrono::milliseconds(did_work ? 1 : (rt_active_ ? 1 : 10)));
+    }
+  }
+
+  // Drop anything queued between host and worker (on model reload / mode change).
+  void drain_fifos ()
+  {
+    double d;
+    while (audio_fifo_.try_dequeue(d)) {}
+    RawResult r;
+    while (result_fifo_.try_dequeue(r)) {}
+    have_result_ = false;
+  }
+
   // Free any windows still held by a pending (unflushed) batch.
   void free_batch_windows ()
   {
@@ -181,6 +254,7 @@ public:
   PiPoScalarAttr<float>           confidence_attr_;
   PiPoScalarAttr<float>           period_attr_;
   PiPoScalarAttr<bool>            offline_attr_;
+  PiPoScalarAttr<int>             threads_attr_;
 
   PiPoIPT (Parent *parent, PiPo *receiver = NULL)
   : PiPo(parent, receiver),
@@ -192,15 +266,24 @@ public:
     window_attr_               (this, "window", "Set the sliding window size for energy thresholding", false, 20),
     confidence_attr_           (this, "confidence", "Set the minimum confidence threshold for classification output", false, 0.2),
     period_attr_               (this, "period", "Set the output period in ms (0 = output every inference)", false, 0),
-    offline_attr_              (this, "offline", "Batch inference for offline use like mubu.process (1), or classify per block in real-time (0)", true, false)
+    offline_attr_              (this, "offline", "Batch inference for offline use like mubu.process (1), or classify per block in real-time (0)", true, false),
+    threads_attr_              (this, "threads", "Number of torch intra-op threads for inference (0 = torch default; process-global, effective before the first model load)", true, 0)
   {
     device_attr_.addEnumItem("CPU",  "Use CPU");
     device_attr_.addEnumItem("CUDA", "NVIDIA GPU");
     device_attr_.addEnumItem("MPS",  "AppleSilicon GPU");
+
+    worker_dist_.resize(256);
+    running_ = true;
+    worker_  = std::thread(&PiPoIPT::worker_loop, this);
   }
 
   ~PiPoIPT (void)
   {
+    rt_active_ = false;
+    running_   = false;
+    if (worker_.joinable()) worker_.join();
+
     free_batch_windows();
     if (classifier_) ipt_destroy(classifier_);
   }
@@ -243,9 +326,18 @@ public:
         return PIPO_ERROR;
       }
 
+      // stop the worker from touching the classifier while we swap it
+      rt_active_ = false;
+      std::lock_guard<std::mutex> lock(classifier_mutex_);
+      drain_fifos();
+
       // discard any previously loaded model / pending batch
       free_batch_windows();
       if (classifier_) { ipt_destroy(classifier_); classifier_ = nullptr; }
+
+      // torch intra-op thread count (process-global, only effective before the
+      // first model load in this process)
+      ipt_set_num_threads(threads_attr_.get());
 
       classifier_ = ipt_create(model_path, device,
                                threshold_attr_.get(), static_cast<int>(window_attr_.get()));
@@ -257,7 +349,11 @@ public:
         signalError(msg.c_str());
         return PIPO_ERROR;
       }
-      ipt_init_buffers(classifier_, static_cast<int>(sr), static_cast<int>(maxFrames));
+      // real-time: the worker drains whatever accumulated in the FIFO since its
+      // last pass, which can be larger than one host block
+      int block = offline_ ? static_cast<int>(maxFrames)
+                           : std::max<int>(static_cast<int>(maxFrames), 4096);
+      ipt_init_buffers(classifier_, static_cast<int>(sr), block);
       inputbuf_.reserve(maxFrames);
 
       // reset batching and output-period state for the freshly loaded model,
@@ -271,6 +367,8 @@ public:
       // query model output parameters
       numclasses_ = ipt_num_classes(classifier_);
       pending_.assign(numclasses_, 0.f);
+      if (static_cast<int>(worker_dist_.size()) < numclasses_)
+        worker_dist_.resize(numclasses_);
 
       std::vector<std::string> classnames(numclasses_);
       const char **out_labels = new const char *[numclasses_];
@@ -287,6 +385,9 @@ public:
       ret = propagateStreamAttributes(true, out_framerate, 0, numclasses_, 1,
                                           out_labels, false, 0.001 / out_framerate, 1);
       delete [] out_labels;
+
+      // hand the classifier to the worker in real-time mode
+      rt_active_ = !offline_;
     }
 
     return ret;
@@ -314,9 +415,15 @@ public:
 
     sync_attributes();   // apply any @threshold / @window / @sensitivity changes
 
-    // acquire the window this block would classify (energy gating happens here),
-    // but defer the model forward: collect windows and run them as one batch.
-    // The window is malloc'd by libipt; we own it until ipt_free_window.
+    // real-time (pipo~): we are on the audio thread. Never run the model here:
+    // hand the samples to the worker and emit whatever it has finished so far.
+    if (!offline_)
+      return frames_realtime(time);
+
+    // offline (mubu.process): acquire the window this block would classify
+    // (energy gating happens here), but defer the model forward: collect
+    // windows and run them as one batch. The window is malloc'd by libipt; we
+    // own it until ipt_free_window.
     float* window = nullptr;
     int len = ipt_acquire_window(classifier_, inputbuf_.data(),
                                  static_cast<int>(inputbuf_.size()), &window);
@@ -327,11 +434,38 @@ public:
       batch_times_.push_back(time);
     }
 
-    // real-time: classify this block immediately (no batching, no added latency).
-    // offline: keep collecting until the batch is full, then flush one big batch.
-    if (!offline_  ||  batch_windows_.size() >= MAX_BATCH)
+    if (batch_windows_.size() >= MAX_BATCH)
       return flush_batch();
 
+    return PIPO_OK;
+  }
+
+  // Real-time block: enqueue audio for the worker, dequeue finished raw
+  // distributions, smooth them in order, and emit the latest one (paced by
+  // @period on frame time). No allocation on the steady-state path.
+  int frames_realtime (double time)
+  {
+    for (double s : inputbuf_)
+      audio_fifo_.try_enqueue(s);   // dropped if the worker falls behind
+
+    bool got_new = false;
+    RawResult r;
+    while (result_fifo_.try_dequeue(r))
+    {
+      ipt_smooth(classifier_, r.dist.data(), static_cast<int>(r.dist.size()),
+                 time, pending_.data(), static_cast<int>(pending_.size()));
+      got_new = true;
+    }
+    if (!got_new)
+      return PIPO_OK;
+    have_result_ = true;
+
+    int period_ms = static_cast<int>(period_attr_.get());
+    if (period_ms <= 0  ||  time - last_output_time_ >= period_ms)
+    {
+      last_output_time_ = time;
+      return propagateFrames(time, 0, pending_.data(), pending_.size(), 1);
+    }
     return PIPO_OK;
   }
 
