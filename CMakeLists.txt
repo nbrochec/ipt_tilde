@@ -32,7 +32,7 @@ add_subdirectory(app/ipt_example)
 # no package-info.json in this repo the variable would be empty and its
 # string(REPLACE) hard-errors. Also stamped into the ipt~ console banner
 # (IPT_PACKAGE_VERSION define), so this is the single place to bump.
-set(PACKAGE_VERSION "2.0.0")
+set(PACKAGE_VERSION "1.2.0")
 include(${CMAKE_SOURCE_DIR}/min-api/script/min-package.cmake)
 set(C74_MIN_API_DIR ${CMAKE_SOURCE_DIR}/min-api)
 set(C74_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/externals)
