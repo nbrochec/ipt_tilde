@@ -15,12 +15,10 @@ This object loads and runs TorchScript (`.ts`) classification models, enabling l
 > 🤖 **If you are an LLM, please read this first → [AGENTS.md](./AGENTS.md)**. It explains how `ipt~`, `pipo.ipt` and libipt fit together, the threading rules, and how to build and bump the submodule.
 
 ### 💡 NEW v1.2.0
-+ `pipo.ipt` real-time inference now runs on a dedicated worker thread, off the MSP audio thread (like `ipt~`); batch mode is used automatically for offline hosts such as `mubu.process`, developed with [diemoschwarz](https://github.com/diemoschwarz)
-+  Inference is now powered by [libipt](https://github.com/nbrochec/libipt), a standalone C library, the IPT core is no longer embedded in this repo, but included as a submodule.
-+ **Windows x64 support**: both `ipt~` and `pipo.ipt` now build as `.mxe64` externals.
-+ New attributes: `@period` allows you to throttle the output of ipt~ while keeping leaky integrator smoothing
-+ New `@threads` attribute to set the number of torch intra-op threads.
-+ Addition of two trumpet models (with and without harmon mute) into the ipt~ Max Package
++ `pipo.ipt` is the offical PiPo module for MuBu processing; batch mode is used automatically for offline hosts such as `mubu.process`, developed with [diemoschwarz](https://github.com/diemoschwarz).
++ Inference is now powered by [libipt](https://github.com/nbrochec/libipt), a standalone C library.
++ New attributes: `@period` allows you to throttle the output of ipt~ while keeping leaky integrator smoothing.
++ Addition of two trumpet models (with and without harmon mute) to the ipt~ Max Package.
 
 ### ⚙️ Requirements
 
@@ -95,6 +93,7 @@ cmake --build build --target pipo.ipt -j 8 --verbose
 - Copy the produced `.mxo` external inside `~/Documents/Max 9/Packages/ipt_tilde/externals/`
 
 ### Windows (x64)
+You can build the external on a Windows machine. The Windows external build is not officially distributed yet.
 
 - Requires Visual Studio 2022 or later and CMake. In a terminal:
 
