@@ -11,6 +11,8 @@ on:
     branches: [dev, main]
   pull_request:
   workflow_dispatch:        # lets you run it by hand from the Actions tab
+  schedule:
+    - cron: "0 5 * * 1,4"   # Mon & Thu, 05:00 UTC; inside a 7-day window
 
 permissions:
   contents: read
@@ -61,3 +63,54 @@ jobs:
 
       - name: unit test
         run: ctest --test-dir build --output-on-failure
+
+  # ---------------------------------------------------------------------------
+  # Same build on Windows: libipt fetches the official MSVC libtorch (same
+  # 2.4.1 CPU version — models are interchangeable), the externals come out as
+  # flat .mxe64 files, and their DLL closure lands in the package's support/
+  # folder (Max's DLL search path for packages).
+  # ---------------------------------------------------------------------------
+  build-windows:
+    name: build & test (Windows x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive   # libipt (+ its model), min-api, pipo-sdk
+
+      - name: cache libtorch
+        uses: actions/cache@v4
+        with:
+          path: libipt/libs/libtorch
+          key: libtorch-2.4.1-win-x64
+
+      # bash, not the default pwsh: PowerShell tokenizes -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+      # at the dot and CMake receives an invalid "3".
+      - name: configure
+        shell: bash
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+
+      - name: build
+        shell: bash
+        run: cmake --build build --config Release -j 4
+
+      - name: check externals + support DLLs + CLI were produced
+        shell: bash
+        run: |
+          set -eux
+          find externals -name "ipt~.mxe64" | grep -q .
+          find externals -name "pipo.ipt.mxe64" | grep -q .
+          test -f support/ipt.dll
+          test -f support/torch_cpu.dll
+          test -x build/app/ipt_example/Release/ipt_example.exe
+
+      - name: runtime check — classify against libipt's dummy model
+        shell: bash
+        run: ./build/app/ipt_example/Release/ipt_example.exe libipt/tests/dummy.ts
+
+      # No ctest here: min-api's mock kernel (c74_mock_clock.h tick thread) hangs
+      # at process teardown on Windows — an upstream issue, not covered by our
+      # code. The same tests run on the macOS job, and the Windows runtime path
+      # is proven by the CLI classification check above.

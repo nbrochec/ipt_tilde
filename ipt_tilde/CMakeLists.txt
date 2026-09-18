@@ -17,38 +17,66 @@ target_link_libraries(${PROJECT_NAME}
         PRIVATE
         ipt_api)
 
+# version stamp printed in the Max console banner (PACKAGE_VERSION is set in
+# the top-level CMakeLists.txt)
+target_compile_definitions(${PROJECT_NAME} PRIVATE IPT_PACKAGE_VERSION="${PACKAGE_VERSION}")
+
 include(${C74_MIN_API_DIR}/script/min-posttarget.cmake)
 include(${C74_MIN_API_DIR}/test/min-object-unittest.cmake)
 
 # the unit test #includes ipt_tilde.cpp, so it links libipt for ipt.h + the C ABI
 # (replaces a stale reference to a non-existent "shared_code" target).
 target_link_libraries(${TEST_NAME} PUBLIC ipt_api)
+target_compile_definitions(${TEST_NAME} PRIVATE IPT_PACKAGE_VERSION="${PACKAGE_VERSION}")
 
-set_target_properties(${PROJECT_NAME}
-        PROPERTIES
-        BUILD_WITH_INSTALL_RPATH FALSE
-        LINK_FLAGS "-Wl,-rpath,@loader_path/"
-)
+# On Windows the test executable can only find ipt.dll + the torch closure by
+# co-location (no rpath); copy them beside it so ctest can run.
+if(WIN32)
+    add_custom_command(TARGET ${TEST_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:ipt_api>" ${IPT_TORCH_RUNTIME_DLLS}
+                "$<TARGET_FILE_DIR:${TEST_NAME}>")
+endif()
 
-# Bundle the libipt runtime closure into the .mxo: libipt.dylib plus the three
-# torch dylibs it depends on. The external's rpath (@loader_path) finds
-# libipt.dylib; libipt.dylib finds the torch dylibs beside it (@loader_path added).
-set(_mxo_macos "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${${PROJECT_NAME}_EXTERN_OUTPUT_NAME}.mxo/Contents/MacOS")
+if(APPLE)
+    set_target_properties(${PROJECT_NAME}
+            PROPERTIES
+            BUILD_WITH_INSTALL_RPATH FALSE
+            LINK_FLAGS "-Wl,-rpath,@loader_path/"
+    )
 
-add_custom_command(
-        TARGET ${PROJECT_NAME}
-        POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:ipt_api>" "${_mxo_macos}/"
-        COMMAND ${CMAKE_COMMAND} -E copy
-                "${IPT_TORCH_LIB_DIR}/libtorch.dylib"
-                "${IPT_TORCH_LIB_DIR}/libtorch_cpu.dylib"
-                "${IPT_TORCH_LIB_DIR}/libc10.dylib"
-                "${_mxo_macos}/"
-        COMMAND install_name_tool -add_rpath "@loader_path" "${_mxo_macos}/libipt.dylib"
-)
+    # Bundle the libipt runtime closure into the .mxo: libipt.dylib plus the three
+    # torch dylibs it depends on. The external's rpath (@loader_path) finds
+    # libipt.dylib; libipt.dylib finds the torch dylibs beside it (@loader_path added).
+    set(_mxo_macos "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${${PROJECT_NAME}_EXTERN_OUTPUT_NAME}.mxo/Contents/MacOS")
 
-add_custom_command(
-        TARGET ${PROJECT_NAME}
-        POST_BUILD
-        COMMAND codesign -s - --deep --force "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${${PROJECT_NAME}_EXTERN_OUTPUT_NAME}.mxo"
-)
+    add_custom_command(
+            TARGET ${PROJECT_NAME}
+            POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:ipt_api>" "${_mxo_macos}/"
+            COMMAND ${CMAKE_COMMAND} -E copy
+                    "${IPT_TORCH_LIB_DIR}/libtorch.dylib"
+                    "${IPT_TORCH_LIB_DIR}/libtorch_cpu.dylib"
+                    "${IPT_TORCH_LIB_DIR}/libc10.dylib"
+                    "${_mxo_macos}/"
+            COMMAND install_name_tool -add_rpath "@loader_path" "${_mxo_macos}/libipt.dylib"
+    )
+
+    add_custom_command(
+            TARGET ${PROJECT_NAME}
+            POST_BUILD
+            COMMAND codesign -s - --deep --force "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${${PROJECT_NAME}_EXTERN_OUTPUT_NAME}.mxo"
+    )
+else()
+    # Windows: the external is a flat .mxe64 (no bundle, no rpath). Max adds the
+    # package's support/ folder to the DLL search path, so ipt.dll and the torch
+    # DLL closure go there, shared by both externals.
+    add_custom_command(
+            TARGET ${PROJECT_NAME}
+            POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_SOURCE_DIR}/support"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "$<TARGET_FILE:ipt_api>" ${IPT_TORCH_RUNTIME_DLLS}
+                    "${CMAKE_SOURCE_DIR}/support/"
+    )
+endif()

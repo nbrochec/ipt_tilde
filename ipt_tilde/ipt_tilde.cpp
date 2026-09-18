@@ -1,6 +1,9 @@
+// <algorithm> must precede c74_min.h: its c74_min_limit.h does `using std::clamp`
+// without including it, which MSVC's non-transitive STL rejects.
+#include <algorithm>
+#include <optional>
 #include "c74_min.h"
 #include <chrono>
-#include <algorithm>
 #include <cctype>
 
 #include "ipt.h"
@@ -171,10 +174,11 @@ public:
     message<> maxclass_setup{
         this, "maxclass_setup",
         [this](const c74::min::atoms &args, const int inlet) -> c74::min::atoms {
-            cout << " ipt~ v1.2.0 (2026) "
+            cout << " ipt~ v" IPT_PACKAGE_VERSION " (2026) "
             << "by Nicolas Brochec" << endl;
             cout << " based on original work by Nicolas Brochec, Joakim Borg, and Marco Fiorini" << endl;
             cout << " IRCAM, RepMus REACH team" << endl;
+            cout << " ipt PiPo Module by Nicolas Brochec and Diemo Schwarz (IRCAM ISMM team)" << endl;
             return {};
         }
     };

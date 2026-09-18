@@ -6,8 +6,10 @@ project(ipt_max VERSION 0.0.1)
 # min-object unit tests defined in subdirectories (e.g. ipt_tilde_test).
 enable_testing()
 
-# Universal binaries are not possible with torch; libipt is arm64-only.
-set(CMAKE_OSX_ARCHITECTURES arm64)
+# Universal binaries are not possible with torch; on macOS libipt is arm64-only.
+if(APPLE)
+    set(CMAKE_OSX_ARCHITECTURES arm64)
+endif()
 
 # --------------------------------------------------------------------------------------
 # libipt (git submodule) owns the entire IPT inference core, the r8brain resampler,
@@ -17,17 +19,20 @@ set(CMAKE_OSX_ARCHITECTURES arm64)
 # --------------------------------------------------------------------------------------
 add_subdirectory(libipt)
 
-# The libtorch runtime dylibs libipt.dylib depends on. libipt downloads torch
-# into its own tree; the Max externals copy these + libipt.dylib into their .mxo
-# bundles. (find_package's TORCH_INSTALL_PREFIX lives in libipt's scope, so we
-# reference the known layout here for the min targets to use.)
-set(IPT_TORCH_LIB_DIR
-    "${CMAKE_CURRENT_SOURCE_DIR}/libipt/libs/libtorch/lib/python3.12/site-packages/torch/lib")
+# libipt downloads torch into its own tree and exports the runtime locations to
+# this scope: IPT_TORCH_LIB_DIR (all platforms) and IPT_TORCH_RUNTIME_DLLS (the
+# Windows DLL closure). The Max externals bundle these + libipt into their .mxo
+# (macOS) or the package's support/ folder (Windows).
 
 # Standalone CLI example (ported to the C ABI).
 add_subdirectory(app/ipt_example)
 
 # min-api config
+# max-package.cmake generates a verinfo.rc on Windows from PACKAGE_VERSION; with
+# no package-info.json in this repo the variable would be empty and its
+# string(REPLACE) hard-errors. Also stamped into the ipt~ console banner
+# (IPT_PACKAGE_VERSION define), so this is the single place to bump.
+set(PACKAGE_VERSION "1.2.0")
 include(${CMAKE_SOURCE_DIR}/min-api/script/min-package.cmake)
 set(C74_MIN_API_DIR ${CMAKE_SOURCE_DIR}/min-api)
 set(C74_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/externals)
@@ -37,5 +42,7 @@ add_subdirectory(ipt_tilde)
 add_subdirectory(pipo.ipt)
 
 # Override settings from min-api for C++17 support
-set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum OS X deployment version" FORCE)
-message(STATUS "MacOS deployment target: ${CMAKE_OSX_DEPLOYMENT_TARGET}")
+if(APPLE)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum OS X deployment version" FORCE)
+    message(STATUS "MacOS deployment target: ${CMAKE_OSX_DEPLOYMENT_TARGET}")
+endif()
