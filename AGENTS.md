@@ -44,6 +44,9 @@ externals/            build output (.mxo / .mxe64); gitignored
 support/              Windows build output (ipt.dll + torch DLLs); gitignored
 build/, build-xcode/, build_libipt/   CMake trees; gitignored
 media/                logo
+README.md             user-facing, mirrored on the IRCAM Forum project page — keep it light
+BUILDING.md           build-from-source instructions for humans (macOS / Windows)
+CITATION.md           BibTeX entries and related papers
 .github/workflows/ci.yml   macOS arm64 + Windows x64 build, runtime check, unit test
 ```
 
@@ -248,7 +251,7 @@ The remaining Node 20 deprecation warnings come from `actions/checkout@v4` and
 
 - **Commits and pushes are made by the maintainer.** Prepare the change,
   build it, and hand back the exact `git` commands. Commit only when asked in
-  so many words, and never add a Co-Authored-By or similar trailer.
+  so many words, and never add a Co-Authored-By or similar trailer. Ask the human to verify your work.
 - Rebuild the target you touched and check the produced bundle
   (`strings externals/<x>.mxo/Contents/MacOS/<x> | grep …` is often enough)
   before reporting done. Real-time behaviour is verified by the maintainer in
@@ -271,8 +274,8 @@ The remaining Node 20 deprecation warnings come from `actions/checkout@v4` and
 
 ## 9. Related
 
-- [ipt_recognition](https://github.com/nbrochec/ipt_recognition) — training
+- [ipt_recognition](https://github.com/nbrochec/ipt_recognition): training
   and export; read its `AGENTS.md` for the data pipeline.
-- [libipt](https://github.com/nbrochec/libipt) — the C ABI and its internals.
-- Tutorials and videos are linked from the README; papers: Brochec et al.
-  2024/2025/2026, Fiorini et al. 2025.
+- [libipt](https://github.com/nbrochec/libipt): the C ABI and its internals.
+- Tutorials and videos are linked from the README; papers and BibTeX live in
+  `CITATION.md` (Brochec et al. 2024/2025/2026, Fiorini et al. 2025).
