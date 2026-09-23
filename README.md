@@ -35,6 +35,7 @@ This object loads and runs TorchScript (`.ts`) classification models, enabling l
 ## 🔗 Related Projects
 
 + [ipt_recognition](http://github.com/nbrochec/ipt_recognition): train your own playing techniques recognition model
++ [ipt_models](https://github.com/DYCI2/ipt_models): pretrained models (electric guitar, flute, trumpet) and their cards, downloadable from [Hugging Face](https://huggingface.co/nbrochec/ipt_models)
 + [libipt](https://github.com/nbrochec/libipt): the standalone C library behind ipt~, to use it in your own project
 + [IPT VAMP Plugin](https://github.com/Ircam-Partiels/ipt-vamp-plugin) by [pierreguillot](https://github.com/pierreguillot)
 
