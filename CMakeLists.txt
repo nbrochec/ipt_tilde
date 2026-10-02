@@ -40,6 +40,7 @@ set(C74_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/externals)
 # min targets — both ported to the libipt C ABI.
 add_subdirectory(ipt_tilde)
 add_subdirectory(pipo.ipt)
+add_subdirectory(pipo.iptseg)
 
 # Override settings from min-api for C++17 support
 if(APPLE)

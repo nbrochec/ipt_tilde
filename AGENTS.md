@@ -20,6 +20,7 @@ audio, plus a CLI example, all consuming the same C library:
 |---|---|---|---|
 | `ipt~` | `ipt_tilde/ipt_tilde.cpp` | min-api (C++ Max SDK) | signal-rate object: audio in, class index / name / distribution out |
 | `pipo.ipt` | `pipo.ipt/PiPoIPT.h`, `pipo.ipt/pipo.ipt.cpp` | pipo-sdk | PiPo module for MuBu hosts: `pipo~` (real time) and `mubu.process` (offline) |
+| `pipo.iptseg` | `pipo.iptseg/PiPoIPTSeg.h`, `pipo.iptseg/pipo.iptseg.cpp` | pipo-sdk | PiPo module chained after `ipt`: turns distributions into time-tagged segments (Class, Score, Occurrences, Duration); no libipt, no torch |
 | `ipt_example` | `app/ipt_example/main.cpp` | plain C | smallest possible consumer of the C ABI; used by CI as a runtime check |
 | libipt | `libipt/` (git submodule) | CMake, libtorch 2.4.1 | the inference core behind a C ABI: `libipt/include/ipt.h` |
 
@@ -36,6 +37,8 @@ own `AGENTS.md`. This repo never touches torch directly: everything goes through
 CMakeLists.txt        root: PACKAGE_VERSION (single source of the version), adds libipt, app, ipt_tilde, pipo.ipt
 ipt_tilde/            ipt~ source, its CMake, a min-api unit test (ipt_tilde_test.cpp)
 pipo.ipt/             PiPoIPT.h (the module), pipo.ipt.cpp (Max wrapper), demo patch, PiPoIPT_schema.md
+pipo.iptseg/          PiPoIPTSeg.h (segmenter on pipo.ipt output), pipo.iptseg.cpp (Max wrapper); uses pipo.ipt/pipo-sdk
+javascript/           ipt.labels.js: writes class names as MuBu labels on a pipo.iptseg track
 app/ipt_example/      CLI consumer of ipt.h
 libipt/               submodule, tracked on its `dev` branch (.gitmodules: branch = dev)
 min-api/              submodule, Cycling '74 min-api
@@ -185,6 +188,21 @@ thread while the worker may be inside `ipt_process`; libipt tolerates that
 because they touch disjoint state, the same pattern `ipt~` uses.
 
 `pipo.ipt/PiPoIPT_schema.md` documents the module in more detail.
+
+### `pipo.iptseg`
+
+A pure PiPo segmenter chained after `ipt` (`ipt:iptseg`), or run with
+`mubu.process` on a stored `ipt` distribution track (re-segmenting is then
+instant, no model forward). Each frame votes for its argmax class; consecutive
+votes for the same class form one segment, as in the IPT Vamp plug-in.
+Attributes: `confidence` (frames below it do not vote, default 0; the only
+confidence filter in a MuBu chain, `ipt.confidence` is not applied), `mindur` (ms a new class must last before it takes over; shorter
+runs are absorbed, default 0), `gap` (ms without a vote that ends a segment, never less than
+1.5 input frames, default 50), `offset` (ms added to segment times).
+Output: one time-tagged frame per segment at its start, emitted when it ends:
+`Class Score Occurrences Duration` (Score is the mean top probability).
+PiPo frames carry no symbols, so labels are written afterwards by
+`javascript/ipt.labels.js` (`extradata label` + `setlabel` to `mubu.track`).
 
 ---
 

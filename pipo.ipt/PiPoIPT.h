@@ -389,6 +389,8 @@ public:
       // hand the classifier to the worker in real-time mode
       rt_active_ = !offline_;
     }
+    else
+      signalError("no model: set @ipt.model to a .ts file");
 
     return ret;
   }

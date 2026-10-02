@@ -8,12 +8,9 @@ ipt~ is a Max/MSP external object for real-time classification of instrumental p
 
 This object loads and runs TorchScript (`.ts`) classification models, enabling low latency inference on CPU and MPS devices. The package also includes `pipo.ipt`, the official PiPo module, which brings the same recognition to MuBu, both in real time and offline.
 
-## 💡 NEW v1.2.0
+## 💡 NEW v1.2.1
 
-+ `pipo.ipt` is the offical PiPo module for MuBu processing; batch mode is used automatically for offline hosts such as `mubu.process`, developed with [diemoschwarz](https://github.com/diemoschwarz).
-+ Inference is now powered by [libipt](https://github.com/nbrochec/libipt), a standalone C library.
-+ New attributes: `@period` allows you to throttle the output of ipt~ while keeping leaky integrator smoothing.
-+ Addition of two trumpet models (with and without harmon mute) to the ipt~ Max Package.
++ `pipo.iptseg` turns the output of `pipo.ipt` into labelled segments for automatic annotation in MuBu (`mubu.process ... ipt:iptseg`), with the same filtering as the [IPT Vamp plug-in](https://github.com/Ircam-Partiels/ipt-vamp-plugin) plus `@mindur`, `@confidence` and `@gap`.
 
 ## ⚙️ Requirements
 
