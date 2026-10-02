@@ -23,7 +23,7 @@ This object loads and runs TorchScript (`.ts`) classification models, enabling l
 
 ## 💾 Installation
 
-+ Go to [Releases](https://github.com/DYCI2/ipt_tilde/releases) and download the latest version of ipt~
++ **Go to [Releases](https://github.com/DYCI2/ipt_tilde/releases/latest) and download the latest version of ipt~**
 + Run the installer depending on your version of Max and follow the instructions
 
 ## 🎥 Videos & Tutorials
@@ -37,7 +37,7 @@ This object loads and runs TorchScript (`.ts`) classification models, enabling l
 + [ipt_recognition](http://github.com/nbrochec/ipt_recognition): train your own playing techniques recognition model
 + [ipt_models](https://github.com/DYCI2/ipt_models): pretrained models (electric guitar, flute, trumpet) and their cards, downloadable from [Hugging Face](https://huggingface.co/nbrochec/ipt_models)
 + [libipt](https://github.com/nbrochec/libipt): the standalone C library behind ipt~, to use it in your own project
-+ [IPT VAMP Plugin](https://github.com/Ircam-Partiels/ipt-vamp-plugin) by [pierreguillot](https://github.com/pierreguillot)
++ [IPT VAMP Plugin](https://github.com/Ircam-Partiels/ipt-vamp-plugin/releases/latest) by [pierreguillot](https://github.com/pierreguillot)
 
 ## 🧠 About
 
