@@ -254,7 +254,9 @@ Two jobs:
 
 - macOS 14 (Apple Silicon): configure, build, check that both `.mxo` bundles
   and the CLI exist, run the CLI against `libipt/tests/dummy.ts`, `ctest`.
-- Windows: same, with `.mxe64` files and the DLL closure in `support/`.
+- Windows: same, with `.mxe64` files and the DLL closure in `support/`; then
+  uploads `externals/*.mxe64` + `support/` as the `ipt_tilde-windows-x64`
+  artifact (14 days, unsigned, not on scheduled runs).
 
 libtorch is cached with a fixed key per platform. GitHub evicts caches unread
 for 7 days; the schedule exists to keep them warm because a cold cache means a

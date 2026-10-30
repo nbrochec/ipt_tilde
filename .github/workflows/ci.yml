@@ -114,3 +114,18 @@ jobs:
       # at process teardown on Windows — an upstream issue, not covered by our
       # code. The same tests run on the macOS job, and the Windows runtime path
       # is proven by the CLI classification check above.
+
+      # Ship the built package so Windows builds can be tried without a local
+      # toolchain. The zip mirrors the Max package layout (externals/ + support/).
+      # Skipped on scheduled runs: support/ holds a few hundred MB of torch DLLs.
+      # These builds are unsigned test builds, not releases.
+      - name: upload Windows package
+        if: github.event_name != 'schedule'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipt_tilde-windows-x64
+          path: |
+            externals/*.mxe64
+            support/
+          if-no-files-found: error
+          retention-days: 14
