@@ -192,7 +192,7 @@ public:
             << "by Nicolas Brochec" << endl;
             cout << " based on original work by Nicolas Brochec, Joakim Borg, and Marco Fiorini" << endl;
             cout << " IRCAM, RepMus REACH team" << endl;
-            cout << " ipt PiPo Module by Nicolas Brochec and Diemo Schwarz (IRCAM ISMM team)" << endl;
+            cout << " ipt related PiPo Modules by Nicolas Brochec and Diemo Schwarz (IRCAM ISMM team)" << endl;
             return {};
         }
     };

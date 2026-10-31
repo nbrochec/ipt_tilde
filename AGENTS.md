@@ -5,7 +5,7 @@ chat assistant fed with repository context) helping someone build, debug or
 extend the `ipt~` Max/MSP external and the `pipo.ipt` MuBu module. It states how
 the pieces fit together, the rules that are not obvious from the code, and the
 traps that cost the most time. Everything here was checked against the `dev`
-branch at v1.2.0. When this file and the code disagree, the code wins.
+branch at v1.2.1. When this file and the code disagree, the code wins.
 
 Humans: the README is the friendlier entry point. This file is denser on purpose.
 
