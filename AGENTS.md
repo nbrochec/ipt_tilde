@@ -254,7 +254,8 @@ that exists on the libipt remote.
 requests, by hand, and **twice a week on a schedule** (Mon and Thu 05:00 UTC).
 Two jobs:
 
-- macOS 14 (Apple Silicon): configure, build, check that both `.mxo` bundles
+- macOS 26 (Apple Silicon, `macos-26`, pinned; `macos-14` was retired on
+  2026-11-02): configure, build, check that both `.mxo` bundles
   and the CLI exist, run the CLI against `libipt/tests/dummy.ts`, `ctest`;
   then uploads `externals/*.mxo` as a tarball (keeps permissions and the
   ad-hoc signature) in the `ipt_tilde-macos-arm64` artifact (14 days, not on

@@ -24,7 +24,10 @@ concurrency:
 jobs:
   build:
     name: build & test (Apple Silicon)
-    runs-on: macos-14            # Apple Silicon — the only supported target
+    # Apple Silicon — the only supported target. Pinned rather than macos-latest
+    # so an image switch never changes the toolchain behind our back; macos-26
+    # ships Xcode 26, the toolchain used for local and release builds.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
         with:
