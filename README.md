@@ -12,11 +12,11 @@ This object loads and runs TorchScript (`.ts`) classification models, enabling l
 
 + `pipo.iptseg` turns the output of `pipo.ipt` into labelled segments for automatic annotation in MuBu (`mubu.process ... ipt:iptseg`), with the same filtering as the [IPT Vamp plug-in](https://github.com/Ircam-Partiels/ipt-vamp-plugin) plus `@mindur`, `@confidence` and `@gap`.
 + Windows version is now officially supported and distributed! See requirements below.
-+ Patches made on a Mac open on Windows: `MPS` falls back to `CPU` with a warning instead of failing to load the model.
++ `MPS` and `CUDA` falls back to `CPU` with a warning instead of failing to load the model.
 
 ## ⚙️ Requirements
 
-+ macOS 10.13 or later with an Apple Silicon processor (M1 or later — Intel Macs are not supported),
++ macOS 10.11 or later with an Apple Silicon processor (M1 or later — Intel Macs are not supported),
   **or** Windows 10/11 on an x64 CPU with AVX2 (any desktop CPU from roughly 2013 onward)
 + Max 8.6 or later / Max 9.0.3 or later
 
