@@ -64,6 +64,25 @@ jobs:
       - name: unit test
         run: ctest --test-dir build --output-on-failure
 
+      # Ship the built bundles so macOS builds can be tried without a local
+      # toolchain. tar first: upload-artifact drops file permissions, the
+      # tarball keeps the .mxo bundles exactly as codesign left them.
+      # Skipped on scheduled runs: each torch-carrying .mxo is ~170 MB.
+      # These builds are ad-hoc signed test builds, not releases.
+      - name: package macOS externals
+        if: github.event_name != 'schedule'
+        run: tar -czf ipt_tilde-macos-arm64.tar.gz externals/*.mxo
+
+      - name: upload macOS package
+        if: github.event_name != 'schedule'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipt_tilde-macos-arm64
+          path: ipt_tilde-macos-arm64.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0    # already gzipped
+
   # ---------------------------------------------------------------------------
   # Same build on Windows: libipt fetches the official MSVC libtorch (same
   # 2.4.1 CPU version — models are interchangeable), the externals come out as

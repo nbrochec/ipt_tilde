@@ -255,7 +255,10 @@ requests, by hand, and **twice a week on a schedule** (Mon and Thu 05:00 UTC).
 Two jobs:
 
 - macOS 14 (Apple Silicon): configure, build, check that both `.mxo` bundles
-  and the CLI exist, run the CLI against `libipt/tests/dummy.ts`, `ctest`.
+  and the CLI exist, run the CLI against `libipt/tests/dummy.ts`, `ctest`;
+  then uploads `externals/*.mxo` as a tarball (keeps permissions and the
+  ad-hoc signature) in the `ipt_tilde-macos-arm64` artifact (14 days, not on
+  scheduled runs).
 - Windows: same, with `.mxe64` files and the DLL closure in `support/`; then
   uploads `externals/*.mxe64` + `support/` as the `ipt_tilde-windows-x64`
   artifact (14 days, unsigned, not on scheduled runs).
