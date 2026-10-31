@@ -59,6 +59,25 @@ jobs:
           test -d "externals/pipo.ipt.mxo"
           test -x build/app/ipt_example/ipt_example
 
+      # The runner's macOS does not decide which macOS the externals run on:
+      # each binary's minos (LC_BUILD_VERSION) does. It comes from
+      # CMAKE_OSX_DEPLOYMENT_TARGET, floored at 11.0 on arm64 (the first Apple
+      # Silicon macOS). Fail if anything in the bundles needs a newer macOS.
+      - name: check minimum macOS of the bundles
+        run: |
+          set -eu
+          max=11.0
+          bad=0
+          for f in externals/*.mxo/Contents/MacOS/*; do
+            minos=$(vtool -show-build "$f" | awk '/minos/ {print $2; exit}')
+            echo "$f: minos $minos"
+            if [ "$(printf '%s\n' "$minos" "$max" | sort -V | tail -n 1)" != "$max" ]; then
+              echo "::error file=$f::requires macOS $minos, more than $max"
+              bad=1
+            fi
+          done
+          exit $bad
+
       - name: runtime check — classify against libipt's dummy model
         run: |
           set -eux
