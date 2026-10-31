@@ -112,7 +112,9 @@ in the console banner; the README "NEW vX.Y.Z" heading is updated by hand.
 
 **Arguments:** `ipt~ <model> [device]`. `<model>` is a path to a `.ts` file
 (absolute, or a name found through Max's search path). `[device]` is `CPU`
-(default), `CUDA` or `MPS`.
+(default), `CUDA` or `MPS`. A device the platform cannot have (MPS off macOS,
+CUDA on macOS) falls back to CPU with a console warning, in both externals, so
+patches saved on a Mac open on a PC.
 
 **Attributes** (all settable at runtime):
 
@@ -154,7 +156,7 @@ host as `ipt.<name>`:
 | Attribute | Default | Meaning |
 |---|---|---|
 | `model` | "" | path to the `.ts`; relative names are resolved against Max's search path; spaces and quotes are handled |
-| `device` | CPU | CPU / CUDA / MPS |
+| `device` | CPU | CPU / CUDA / MPS; falls back to CPU as in `ipt~` |
 | `sensitivity` | 0.5 | as in `ipt~` |
 | `sensitivityrange` | 500 | ms |
 | `threshold` | −80 | dB |

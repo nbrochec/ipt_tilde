@@ -145,6 +145,20 @@ public:
         try {
             auto model_path = parse_model_path(args);
             auto device = parse_device_type(args);
+            // Patches move between Macs and PCs: a device this platform cannot have
+            // (MPS is Apple-only, macOS has no CUDA) runs on the CPU instead of
+            // failing the model load.
+#if defined(__APPLE__)
+            if (device == IPT_DEVICE_CUDA) {
+                cwarn << "CUDA is not available on macOS, using CPU" << endl;
+                device = IPT_DEVICE_CPU;
+            }
+#else
+            if (device == IPT_DEVICE_MPS) {
+                cwarn << "MPS is only available on macOS, using CPU" << endl;
+                device = IPT_DEVICE_CPU;
+            }
+#endif
             // Defaults here; threshold/window attribute values are pushed in `setup`.
             m_classifier = ipt_create(model_path.c_str(), device,
                                       DEFAULT_MINIMUM_THRESHOLD, DEFAULT_THRESHOLD_WINDOW_MS);

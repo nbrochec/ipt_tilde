@@ -326,6 +326,23 @@ public:
         return PIPO_ERROR;
       }
 
+      // patches move between Macs and PCs: a device this platform cannot have
+      // (MPS is Apple-only, macOS has no CUDA) runs on the CPU instead of
+      // failing the model load
+#if defined(__APPLE__)
+      if (device == IPT_DEVICE_CUDA)
+      {
+        signalWarning("CUDA is not available on macOS, using CPU");
+        device = IPT_DEVICE_CPU;
+      }
+#else
+      if (device == IPT_DEVICE_MPS)
+      {
+        signalWarning("MPS is only available on macOS, using CPU");
+        device = IPT_DEVICE_CPU;
+      }
+#endif
+
       // stop the worker from touching the classifier while we swap it
       rt_active_ = false;
       std::lock_guard<std::mutex> lock(classifier_mutex_);
