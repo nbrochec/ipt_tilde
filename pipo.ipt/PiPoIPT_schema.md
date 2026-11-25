@@ -22,6 +22,7 @@ Since **v1.2.0** it no longer embeds the inference core — it drives [**libipt*
   |      ipt_initialize_model()   load TorchScript + parse metadata     |
   |      ipt_init_buffers(sr, maxFrames)                                 |
   |    - ipt_num_classes / ipt_get_class_name -> output stream format    |
+  |      and the names, published for the read-only @classnames          |
   |    - resets state (batch, period); sync_attributes()                |
   +----------------------------------------------------------------------+
                                     |

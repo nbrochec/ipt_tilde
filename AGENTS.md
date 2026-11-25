@@ -165,6 +165,12 @@ host as `ipt.<name>`:
 | `period` | 0 | ms, paced on the frame time |
 | `offline` | 0 | 1 forces batch mode |
 | `threads` | 0 | torch intra-op threads; 0 = torch default; process-global and only effective before the first model load in the Max process |
+| `classnames` | (empty) | **read-only**: class names of the loaded model, in class index order; empty until the model has been loaded (after a `mubu.process` run; with `pipo~`, once DSP is on). Read it with `[getattr ipt.classnames]` or `getattr()` in JS: the MuBu hosts accept `getipt.<attr>` messages but send no reply, for every attribute |
+
+`classnames` is kept in a process-wide table keyed by the resolved model path,
+not in the attribute itself: `mubu.process` answers attribute queries from a
+different copy of the chain than the one that loaded the model, and every copy
+shares the model path.
 
 Output: one frame per inference with `num_classes` columns, labelled with the
 class names, at rate `sr / maxFrames`.

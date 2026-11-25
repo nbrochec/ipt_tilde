@@ -6,6 +6,7 @@
 #include <cmath>
 #include <string>
 #include <cstring>
+#include <map>
 #include <vector>
 #include <thread>
 #include <atomic>
@@ -100,6 +101,67 @@ private:
 //   - returns the input unchanged if it is already readable (absolute/cwd-relative),
 //   - returns empty for empty input.
 std::string ipt_resolve_model_path (const char *name);
+
+// Class names of every model loaded in this process, keyed by resolved model
+// path. Written by the instance that loads a model (on the host's processing
+// thread), read by PiPoClassNamesAttr (on the Max main thread).
+inline std::mutex &ipt_classnames_mutex ()
+{
+  static std::mutex m;
+  return m;
+}
+
+inline std::map<std::string, std::vector<std::string>> &ipt_classnames_table ()
+{
+  static std::map<std::string, std::vector<std::string>> table;
+  return table;
+}
+
+// Read-only attribute ipt.classnames: the class names of the loaded model, in
+// class index order (read with getipt.classnames).
+// A host may answer an attribute query from another instance of the module
+// than the one that ran the model (mubu.process works on a copy of its chain),
+// so the names are not stored in the attribute: they are looked up in the
+// process-wide table through the model path of this instance, which every copy
+// shares. Empty until a model with that path has been loaded.
+class PiPoClassNamesAttr : public PiPo::Attr
+{
+public:
+  PiPoClassNamesAttr (PiPo *pipo, const char *name, const char *descr, PiPoPathAttr *model)
+  : Attr(pipo, name, descr, &typeid(const char *), false, false, true),
+    model_(model)
+  { }
+
+  // read-only: values sent by the user are ignored
+  void clone (Attr *other) override { }
+  unsigned int setSize (unsigned int size) override { return getSize(); }
+  void set (unsigned int i, int val, bool silently = false) override { }
+  void set (unsigned int i, double val, bool silently = false) override { }
+  void set (unsigned int i, const char *val, bool silently = false) override { }
+
+  // getSize() refreshes the snapshot the getters below read from
+  unsigned int getSize (void) override
+  {
+    std::string key = ipt_resolve_model_path(model_->get());
+    std::lock_guard<std::mutex> lock(ipt_classnames_mutex());
+    auto &table = ipt_classnames_table();
+    auto it = table.find(key);
+    if (it != table.end())
+      names_ = it->second;
+    else
+      names_.clear();
+    return static_cast<unsigned int>(names_.size());
+  }
+
+  int         getInt (unsigned int i) override  { return 0; }
+  double      getDbl (unsigned int i) override  { return 0; }
+  const char *getStr (unsigned int i) override  { return i < names_.size() ? names_[i].c_str() : NULL; }
+  PiPo::Atom  getAtom (unsigned int i) override { return PiPo::Atom(i < names_.size() ? names_[i].c_str() : ""); }
+
+private:
+  PiPoPathAttr            *model_;
+  std::vector<std::string> names_;   // snapshot owned here, so getStr() pointers stay valid
+};
 
 class PiPoIPT : public PiPo
 {
@@ -255,6 +317,7 @@ public:
   PiPoScalarAttr<float>           period_attr_;
   PiPoScalarAttr<bool>            offline_attr_;
   PiPoScalarAttr<int>             threads_attr_;
+  PiPoClassNamesAttr              classnames_attr_;
 
   PiPoIPT (Parent *parent, PiPo *receiver = NULL)
   : PiPo(parent, receiver),
@@ -267,7 +330,8 @@ public:
     confidence_attr_           (this, "confidence", "Set the minimum confidence threshold for classification output", false, 0.2),
     period_attr_               (this, "period", "Set the output period in ms (0 = output every inference)", false, 0),
     offline_attr_              (this, "offline", "Batch inference for offline use like mubu.process (1), or classify per block in real-time (0)", true, false),
-    threads_attr_              (this, "threads", "Number of torch intra-op threads for inference (0 = torch default; process-global, effective before the first model load)", true, 0)
+    threads_attr_              (this, "threads", "Number of torch intra-op threads for inference (0 = torch default; process-global, effective before the first model load)", true, 0),
+    classnames_attr_           (this, "classnames", "Class names of the loaded model, in class index order (read-only)", &modelname_attr_)
   {
     device_attr_.addEnumItem("CPU",  "Use CPU");
     device_attr_.addEnumItem("CUDA", "NVIDIA GPU");
@@ -395,6 +459,12 @@ public:
         ipt_get_class_name(classifier_, i, name, sizeof(name));
         classnames[i] = name;
         out_labels[i] = classnames[i].c_str();
+      }
+
+      // publish the names for ipt.classnames, under the same key its getter uses
+      {
+        std::lock_guard<std::mutex> lock(ipt_classnames_mutex());
+        ipt_classnames_table()[resolved_path] = classnames;
       }
 
       // determine output stream parameters
